@@ -1,0 +1,29 @@
+Project: Synthetic Data Workbench (Streamlit + SDV)
+
+How to run:
+- Streamlit: `streamlit run streamlit_app.py`
+- CLI example: `python sdv_tabular_example.py --csv data\patients.csv --output data\patients_synth.csv --report artifacts\patients_report.json`
+- Tests: `python -m pytest -q`
+
+Key files:
+- `streamlit_app.py`: Main UI
+- `sdv_tabular_example.py`: CLI
+- `synthesis_runner.py`: Training, seeding, timing
+- `evaluation_utils.py`: Metrics and tips
+- `data/`: CSVs (input); synthetic outputs saved alongside originals
+- `docs/explainers.md`: In-app knowledge
+- `README.md`: Setup and usage
+
+Quality bar:
+- Utility score target: >= 0.7 (context-dependent)
+- Reproducibility: respect `random_state` if available; otherwise seed global RNGs
+- Keep dependencies within `requirements.txt`; avoid adding heavy extras
+
+Common tasks:
+- Add new model: update `SYNTHESIZER_REGISTRY` in both UI and CLI
+- Add new metric: update `evaluation_utils.py` and reflect in UI tabs
+- Performance: adjust `MODEL_DURATION_FACTORS` and duration heuristics
+
+Do not:
+- Commit `.venv`, large artifacts, or generated CSVs
+

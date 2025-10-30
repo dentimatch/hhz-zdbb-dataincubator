@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+*.log
+artifacts/
+.ipynb_checkpoints/
+data/*_synthetic.csv
+

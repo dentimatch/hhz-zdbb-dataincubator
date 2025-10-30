@@ -1,0 +1,34 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run Streamlit app",
+      "type": "shell",
+      "command": "streamlit run streamlit_app.py",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Run tests",
+      "type": "shell",
+      "command": "python -m pytest -q",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Run CLI example",
+      "type": "shell",
+      "command": "python sdv_tabular_example.py --csv data\\patients.csv --output data\\patients_synth.csv --report artifacts\\patients_report.json",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Vibe: Context dump",
+      "type": "shell",
+      "command": "python context_assembler.py",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    }
+  ]
+}
+

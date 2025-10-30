@@ -1,0 +1,29 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Streamlit",
+      "type": "python",
+      "request": "launch",
+      "program": "streamlit",
+      "args": ["run", "streamlit_app.py"],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "CLI (patients.csv)",
+      "type": "python",
+      "request": "launch",
+      "program": "sdv_tabular_example.py",
+      "args": [
+        "--csv",
+        "data/patients.csv",
+        "--output",
+        "data/patients_synth.csv",
+        "--report",
+        "artifacts/patients_report.json"
+      ],
+      "console": "integratedTerminal"
+    }
+  ]
+}
+

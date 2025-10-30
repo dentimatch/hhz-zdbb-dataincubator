@@ -154,3 +154,13 @@ The web application provides a guided workflow for non-technical users.
 
 Good luck creating synthetic datasets! Reach out with questions or suggestions.
 
+## Agent/Vibe setup
+
+- Primary commands:
+  - Run app: `streamlit run streamlit_app.py`
+  - Run tests: `python -m pytest -q`
+  - Run CLI: `python sdv_tabular_example.py --csv data\\patients.csv --output data\\patients_synth.csv --report artifacts\\patients_report.json`
+- Cursor tasks: Terminal → Run Task → pick "Run Streamlit app", "Run tests", "Run CLI example", or "Vibe: Context dump".
+- Context: `.cursorrules` provides agents a concise project overview and quality bar; `.cursorignore` reduces noise.
+- Interpreter: set to `.venv\\Scripts\\python.exe` (see `.vscode/settings.json`).
+- Evaluation: aim for utility score ≥ 0.7 (contextual) and reproducible runs (model `random_state` or global seeding path).

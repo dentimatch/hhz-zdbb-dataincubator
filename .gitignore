@@ -14,6 +14,8 @@ streamlit_app.db
 
 # Data outputs
 data/*_synthetic.csv
+artifacts/
+
 
 # OS / editor files
 .DS_Store
@@ -21,4 +23,5 @@ Thumbs.db
 
 # Tests
 tests/__pycache__/
+
 
