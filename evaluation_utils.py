@@ -13,10 +13,10 @@ from sdmetrics.reports.single_table import QualityReport
 LOGGER = logging.getLogger(__name__)
 
 ERROR_HINTS = [
-    (("nan", "missing", "null", "na"), "Prüfe, ob fehlende Werte bereinigt oder im Modell erlaubt sind."),
-    (("shape", "dimension", "columns"), "Vergewissere dich, dass das Schema stabil bleibt (gleiche Spaltennamen/-typen)."),
-    (("timeout", "converge", "diverge"), "Reduziere zusätzliche Zeilen oder versuche `GaussianCopula` für kleinere Datensätze."),
-    (("datetime", "date", "timestamp"), "Überprüfe Datums-/Zeitformate; ggf. in standardisiertes Format (YYYY-MM-DD) bringen."),
+    (("nan", "missing", "null", "na"), "Check whether missing values are cleaned or allowed by the model."),
+    (("shape", "dimension", "columns"), "Ensure the schema stays consistent (same column names and dtypes)."),
+    (("timeout", "converge", "diverge"), "Reduce additional rows or try `GaussianCopula` for smaller datasets."),
+    (("datetime", "date", "timestamp"), "Validate date/time formats; convert to a standard format (YYYY-MM-DD) if needed."),
 ]
 
 def run_quality_report(
@@ -64,9 +64,9 @@ def error_suggestions(message: str) -> List[str]:
 
     if not tips:
         tips.append(
-            "Versuche ein alternatives Modell (z. B. GaussianCopula) oder reduziere die Zusatzzeilen, falls das Training instabil ist."
+            "Try an alternative model (for example GaussianCopula) or reduce additional rows if training is unstable."
         )
-        tips.append("Prüfe, ob die Eingabedaten saubere Typen und ausreichend Beobachtungen besitzen.")
+        tips.append("Confirm that the input data has clean dtypes and enough observations.")
 
     return tips
 
@@ -75,10 +75,10 @@ def interpret_utility_score(score: float) -> str:
     """Return a simple textual interpretation for the utility score."""
 
     if score >= 0.85:
-        return "Ausgezeichnete Übereinstimmung – synthetische Daten sehr nah am Original."
+        return "Excellent alignment — synthetic data is very close to the original."
     if score >= 0.7:
-        return "Gute Qualität – für viele Analysen ausreichend, dennoch Stichproben prüfen."
+        return "Good quality — suitable for many analyses, but spot-check samples."
     if score >= 0.55:
-        return "Akzeptabel – Ergebnisse genauer prüfen und ggf. Parameter anpassen."
-    return "Niedrige Qualität – Trainingskonfiguration anpassen oder Datenvorverarbeitung verbessern."
+        return "Acceptable — review results more carefully and adjust parameters if needed."
+    return "Low quality — tweak the training configuration or improve data preprocessing."
 

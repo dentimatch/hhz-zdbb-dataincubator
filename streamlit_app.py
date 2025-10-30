@@ -60,10 +60,10 @@ MODEL_ADVANCED_CONFIGS = {
 
 
 METRIC_HELP = {
-    "utility": "Bewertet die Ähnlichkeit zwischen Original- und synthetischen Daten (0-1, höher ist besser).",
-    "model": "Gewähltes SDV-Modell zur Generierung der synthetischen Daten.",
-    "rows": "Anzahl der erzeugten Zeilen (Original + zusätzliche Zeilen).",
-    "seed": "Zufallsseed für reproduzierbare Ergebnisse.",
+    "utility": "Rates how similar the original and synthetic data are (0-1, higher is better).",
+    "model": "Selected SDV model used to generate the synthetic data.",
+    "rows": "Number of rows produced (original + additional rows).",
+    "seed": "Random seed for reproducible results.",
 }
 
 
@@ -139,14 +139,14 @@ def app() -> None:
 
     csv_files = list_csv_files()
     if not csv_files:
-        st.warning("Kein CSV in 'data/' gefunden. Bitte Dateien hinzufügen und neu laden.")
+        st.warning("No CSV files found in 'data/'. Please add files and reload.")
         return
 
-    st.sidebar.subheader("Datenauswahl")
+    st.sidebar.subheader("Data selection")
     uploaded_file = st.sidebar.file_uploader(
-        "CSV hochladen oder ziehen",
+        "Upload or drop a CSV",
         type=["csv"],
-        help="Neue Datei wird im Ordner `data/` gespeichert.",
+        help="The uploaded file is stored in the `data/` folder.",
     )
     if uploaded_file is not None:
         target_name = Path(uploaded_file.name).name or "upload.csv"
@@ -155,18 +155,18 @@ def app() -> None:
             timestamp = int(time.time())
             target_path = DATA_DIR / f"{target_path.stem}_{timestamp}{target_path.suffix}"
         target_path.write_bytes(uploaded_file.getbuffer())
-        st.sidebar.success(f"Datei unter `{target_path.name}` gespeichert.")
+        st.sidebar.success(f"File saved as `{target_path.name}`.")
         st.session_state["selected_path"] = target_path
         st.experimental_rerun()
 
     file_display = {file.name: file for file in csv_files}
-    selected_name = st.sidebar.selectbox("CSV-Datei auswählen", options=list(file_display.keys()))
+    selected_name = st.sidebar.selectbox("Select CSV file", options=list(file_display.keys()))
     selected_path = file_display[selected_name]
 
     selected_mtime = selected_path.stat().st_mtime
     tracking = st.session_state.get("file_tracking")
     if tracking and tracking.get("path") == str(selected_path) and tracking.get("mtime") != selected_mtime:
-        st.sidebar.warning("Datei außerhalb der App geändert – Daten werden neu geladen.")
+        st.sidebar.warning("File modified outside the app—reloading data.")
 
     if st.session_state.get("selected_path") != selected_path:
         st.session_state.pop("synthetic_result", None)
@@ -176,34 +176,34 @@ def app() -> None:
 
     df_real, metadata = load_dataset_cached(str(selected_path), selected_mtime)
 
-    st.subheader("1. Datensatz erkunden")
-    st.write(f"**Datei:** `{selected_name}` | **Zeilen:** {len(df_real):,} | **Spalten:** {len(df_real.columns)}")
+    st.subheader("1. Explore the dataset")
+    st.write(f"**File:** `{selected_name}` | **Rows:** {len(df_real):,} | **Columns:** {len(df_real.columns)}")
 
     tab_overview, tab_numeric, tab_categorical, tab_infos = st.tabs([
-        "Vorschau",
-        "Numerische Statistik",
-        "Kategoriale Werte",
-        "Infos",
+        "Preview",
+        "Numeric statistics",
+        "Categorical values",
+        "Info",
     ])
 
     with tab_overview:
-        st.dataframe(df_real.head(), use_container_width=True)
-        st.caption("Erste 5 Zeilen des Originaldatensatzes")
+        st.dataframe(df_real.head(), width="stretch")
+        st.caption("First 5 rows of the original dataset")
 
     with tab_numeric:
         numeric_stats = describe_numeric(df_real)
         if numeric_stats.empty:
-            st.info("Keine numerischen Spalten gefunden.")
+            st.info("No numeric columns found.")
         else:
-            st.dataframe(numeric_stats, use_container_width=True)
+            st.dataframe(numeric_stats, width="stretch")
 
     with tab_categorical:
         value_counts = top_value_counts(df_real)
         if not value_counts:
-            st.info("Keine kategorialen Spalten gefunden.")
+            st.info("No categorical columns found.")
         else:
             for column, counts in value_counts.items():
-                with st.expander(f"Top-Werte für {column}"):
+                with st.expander(f"Top values for {column}"):
                     st.table(counts)
 
     with tab_infos:
@@ -211,37 +211,37 @@ def app() -> None:
         if explainer_md:
             st.markdown(explainer_md)
         else:
-            st.info("Keine Zusatzinformationen gefunden. Bitte `docs/explainers.md` prüfen.")
+            st.info("No additional information found. Please check `docs/explainers.md`.")
 
-    st.subheader("2. Synthetische Daten generieren")
+    st.subheader("2. Generate synthetic data")
 
     col_left, col_right = st.columns(2)
     with col_left:
         model_name = st.selectbox("Synthesizer", options=list(SYNTHESIZER_REGISTRY.keys()), index=0)
         random_seed = int(
-            st.number_input("Random Seed", value=42, step=1, help="Für reproduzierbare Ergebnisse.")
+            st.number_input("Random Seed", value=42, step=1, help="For reproducible results.")
         )
     with col_right:
         additional_rows = st.number_input(
-            "Zusätzliche Zeilen",
+            "Additional rows",
             min_value=0,
             max_value=int(len(df_real) * 50) if len(df_real) else 10000,
             value=min(len(df_real), 1000),
-            help="Anzahl zusätzlicher synthetischer Zeilen im Vergleich zum Original.",
+            help="Number of additional synthetic rows compared to the original.",
         )
-        suffix = st.text_input("Dateisuffix", value=DEFAULT_SUFFIX, help="Suffix für die Ausgabe (z. B. _synthetic)")
+        suffix = st.text_input("File suffix", value=DEFAULT_SUFFIX, help="Suffix for the output (e.g. _synthetic)")
 
     init_kwargs: Dict[str, int] = {}
     model_defaults = MODEL_ADVANCED_CONFIGS.get(model_name)
     if model_defaults:
-        with st.expander("Trainingseinstellungen (optional)", expanded=False):
+        with st.expander("Training settings (optional)", expanded=False):
             epochs_val = st.number_input(
                 "Epochs",
                 min_value=1,
                 max_value=5000,
                 value=model_defaults["epochs"],
                 step=10,
-                help="Anzahl der Trainingsdurchläufe (höher = bessere Qualität, längere Laufzeit).",
+                help="Number of training passes (higher = better quality, longer runtime).",
             )
             batch_size_val = st.number_input(
                 "Batch Size",
@@ -249,7 +249,7 @@ def app() -> None:
                 max_value=4096,
                 value=model_defaults["batch_size"],
                 step=16,
-                help="Größe der Trainings-Batches. Kleinere Werte = stabiler, längere Laufzeit.",
+                help="Training batch size. Smaller values = more stable, longer runtime.",
             )
             init_kwargs["epochs"] = int(epochs_val)
             init_kwargs["batch_size"] = int(batch_size_val)
@@ -265,19 +265,19 @@ def app() -> None:
     duration_label = format_duration_label(estimated_minutes)
 
     st.markdown(
-        f"*Gesamte synthetische Zeilen*: **{total_rows:,}** (Original: {len(df_real):,} + Zusatz: {additional_rows_int:,})"
+        f"*Total synthetic rows*: **{total_rows:,}** (Original: {len(df_real):,} + Extra: {additional_rows_int:,})"
     )
     st.caption(
-        "Geschätzte Dauer: "
-        f"{duration_label} (Heuristik basierend auf Datensatzgröße und Modell)"
+        "Estimated duration: "
+        f"{duration_label} (heuristic based on dataset size and model)"
     )
 
-    if st.button("Generieren", type="primary"):
+    if st.button("Generate", type="primary"):
         progress_placeholder = st.empty()
 
         progress_bar = progress_placeholder.progress(
             0,
-            text=f"Training gestartet (≈ {duration_label})",
+            text=f"Training started (≈ {duration_label})",
         )
 
         def progress_callback(fraction: float, status_text: str) -> None:
@@ -310,10 +310,10 @@ def app() -> None:
             output_path.parent.mkdir(parents=True, exist_ok=True)
             df_synth.to_csv(output_path, index=False)
 
-            base_hints: List[str] = [f"Training abgeschlossen in {actual_duration_label}."]
+            base_hints: List[str] = [f"Training finished in {actual_duration_label}."]
             if init_kwargs:
                 formatted = ", ".join(f"{key}={value}" for key, value in init_kwargs.items())
-                base_hints.append(f"Verwendete Trainingsparameter: {formatted}")
+                base_hints.append(f"Training parameters: {formatted}")
             st.session_state["synthetic_result"] = SyntheticResult(
                 dataframe=df_synth,
                 output_path=output_path,
@@ -329,25 +329,25 @@ def app() -> None:
             )
             if runner_result.used_global_seed:
                 st.info(
-                    "Hinweis: Das gewählte Modell unterstützt kein `random_state`. "
-                    "Globale Zufallsquellen wurden mit dem angegebenen Seed gesetzt."
+                    "Note: the selected model does not support `random_state`. "
+                    "Global random generators were seeded with the provided value."
                 )
                 st.session_state["synthetic_result"].hints.append(
-                    "Globale Zufallsquellen mit angegebenem Seed gesetzt (Modell ohne random_state)."
+                    "Global random generators seeded with the provided value (model without random_state)."
                 )
             if report_warnings:
                 st.warning("\n".join(report_warnings))
-            st.success(f"Synthetischer Datensatz gespeichert unter `{output_path.name}`")
+            st.success(f"Synthetic dataset saved as `{output_path.name}`")
         except Exception as exc:  # pragma: no cover - Streamlit handles display
             progress_placeholder.empty()
-            st.error(f"Fehler beim Generieren: {exc}")
+            st.error(f"Error during generation: {exc}")
             hints = error_suggestions(str(exc))
             if hints:
-                st.info("Tipps:\n- " + "\n- ".join(hints))
+                st.info("Tips:\n- " + "\n- ".join(hints))
 
     result: Optional[SyntheticResult] = st.session_state.get("synthetic_result")
     if result:
-        st.subheader("3. Ergebnisse & Validierung")
+        st.subheader("3. Results & validation")
 
         metric_cols = st.columns(4)
         metric_cols[0].metric(
@@ -356,12 +356,12 @@ def app() -> None:
             help=METRIC_HELP["utility"],
         )
         metric_cols[1].metric(
-            "Modell",
+            "Model",
             result.model_name,
             help=METRIC_HELP["model"],
         )
         metric_cols[2].metric(
-            "Zeilen (synthetisch)",
+            "Rows (synthetic)",
             f"{result.total_rows:,}",
             help=METRIC_HELP["rows"],
         )
@@ -372,35 +372,35 @@ def app() -> None:
         )
 
         status_text = (
-            f"Modell: {result.model_name}\n"
+            f"Model: {result.model_name}\n"
             f"Seed: {result.random_seed}\n"
-            f"Zeilen gesamt: {result.total_rows:,} (Zusätzlich: {result.additional_rows:,})\n"
-            f"Utility Score: {result.utility_score:.3f}\n"
-            f"Geschätzte Dauer: {result.duration_label}\n"
-            f"Tatsächliche Dauer: {result.actual_duration_label}"
+            f"Total rows: {result.total_rows:,} (Additional: {result.additional_rows:,})\n"
+            f"Utility score: {result.utility_score:.3f}\n"
+            f"Estimated duration: {result.duration_label}\n"
+            f"Actual duration: {result.actual_duration_label}"
         )
-        st.write("**Zusammenfassung**")
+        st.write("**Summary**")
         st.code(status_text, language="text")
         st.caption(interpret_utility_score(result.utility_score))
-        if st.button("Zusammenfassung kopieren"):
+        if st.button("Copy summary"):
             st.query_params.update({"summary": status_text})
-            st.success("Zusammenfassung via Query-Parameter bereitgestellt.")
+            st.success("Summary provided via query parameter.")
 
         hints = result.hints
-        st.write("**Hinweise**")
+        st.write("**Notes**")
         if hints:
             hints_text = "\n".join(f"- {hint}" for hint in hints)
             st.write(hints_text)
-            if st.button("Hinweise kopieren"):
+            if st.button("Copy notes"):
                 st.query_params.update({"hints": hints_text})
-                st.success("Hinweise via Query-Parameter bereitgestellt.")
+                st.success("Notes provided via query parameter.")
         else:
-            st.caption("Keine Hinweise verfügbar.")
+            st.caption("No notes available.")
 
-        preview_tab, compare_tab = st.tabs(["Synthetische Vorschau", "Vergleich" ])
+        preview_tab, compare_tab = st.tabs(["Synthetic preview", "Comparison"])
         with preview_tab:
-            st.dataframe(result.dataframe.head(), use_container_width=True)
-            st.caption("Erste 5 Zeilen des synthetischen Datensatzes")
+            st.dataframe(result.dataframe.head(), width="stretch")
+            st.caption("First 5 rows of the synthetic dataset")
 
         with compare_tab:
             synth_numeric = describe_numeric(result.dataframe)
@@ -410,16 +410,16 @@ def app() -> None:
                     .add_suffix("_original")
                     .join(synth_numeric.add_suffix("_synthetic"), how="outer")
                 )
-                st.dataframe(combined, use_container_width=True)
+                st.dataframe(combined, width="stretch")
             else:
-                st.info("Numerische Kennzahlen konnten nicht verglichen werden.")
+                st.info("Numeric metrics could not be compared.")
 
-        with st.expander("Detailierte Qualitätsmetriken"):
+        with st.expander("Detailed quality metrics"):
             details = result.report_details
             if details.empty:
-                st.info("Keine Detailmetriken verfügbar.")
+                st.info("No detailed metrics available.")
             elif "property" not in details.columns:
-                st.dataframe(details, use_container_width=True)
+                st.dataframe(details, width="stretch")
             else:
                 property_labels = {
                     "Column Shapes": "Column Shapes",
@@ -434,21 +434,21 @@ def app() -> None:
                             columns=["property"],
                             errors="ignore",
                         )
-                        st.dataframe(subset, use_container_width=True)
+                        st.dataframe(subset, width="stretch")
                         st.caption(
-                            "Metrics für "
+                            "Metrics for "
                             f"{property_labels.get(category, category)}"
                         )
 
         csv_bytes = result.dataframe.to_csv(index=False).encode("utf-8")
         st.download_button(
-            label="Synthetischen Datensatz herunterladen",
+            label="Download synthetic dataset",
             data=csv_bytes,
             file_name=result.output_path.name,
             mime="text/csv",
         )
 
-        st.caption(f"Datei gespeichert in `{result.output_path}`")
+        st.caption(f"File saved to `{result.output_path}`")
 
 
 if __name__ == "__main__":

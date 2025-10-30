@@ -16,7 +16,7 @@ from sdv.metadata import SingleTableMetadata
 
 LOGGER = logging.getLogger(__name__)
 
-BASE_MINUTES_PER_CELL = 1.0 / 25000  # 25k Zellen ≈ 1 Minute Baseline
+BASE_MINUTES_PER_CELL = 1.0 / 25000  # ~25k cells ≈ 1 minute baseline
 MODEL_DURATION_FACTORS = {
     "gaussiancopula": 0.8,
     "ctgan": 4.5,
@@ -95,7 +95,7 @@ def build_synthesizer(
             if key in params:
                 kwargs[key] = value
             else:
-                LOGGER.debug("Ignoriere unbekannte Initialisierungsoption '%s' für %s", key, name)
+                LOGGER.debug("Ignoring unknown initialization option '%s' for %s", key, name)
 
     synthesizer = SynthClass(metadata, **kwargs)
     return synthesizer, used_global_seed
@@ -119,17 +119,17 @@ def estimate_duration_minutes(rows: int, columns: int, model_name: str, addition
 
 def format_duration_label(minutes: float) -> str:
     if minutes < 1:
-        return "< 1 Minute"
+        return "< 1 minute"
     if minutes < 5:
-        return "ca. 1–5 Minuten"
+        return "approx. 1–5 minutes"
     if minutes < 15:
-        return "ca. 5–15 Minuten"
+        return "approx. 5–15 minutes"
     if minutes < 30:
-        return "ca. 15–30 Minuten"
+        return "approx. 15–30 minutes"
     if minutes < 60:
-        return "ca. 30–60 Minuten"
+        return "approx. 30–60 minutes"
     hours = minutes / 60
-    return f"> {hours:.1f} Stunden"
+    return f"> {hours:.1f} hours"
 
 
 def format_remaining_seconds(seconds: float) -> str:
@@ -185,7 +185,7 @@ def run_training(
 
     est_seconds = max(5.0, estimated_minutes * 60)
     if progress_callback:
-        progress_callback(0.0, f"Training gestartet (≈ {format_duration_label(estimated_minutes)})")
+        progress_callback(0.0, f"Training started (≈ {format_duration_label(estimated_minutes)})")
 
     with ThreadPoolExecutor(max_workers=1) as executor:
         start_time = time.perf_counter()
@@ -195,13 +195,13 @@ def run_training(
             ratio = min(elapsed / est_seconds, 0.98)
             remaining_label = format_remaining_seconds(max(est_seconds - elapsed, 0))
             if progress_callback:
-                progress_callback(ratio, f"Training läuft (≈ {remaining_label} verbleibend)")
+                progress_callback(ratio, f"Training running (≈ {remaining_label} remaining)")
             time.sleep(poll_interval)
         future.result()
         actual_seconds = time.perf_counter() - start_time
 
     if progress_callback:
-        progress_callback(1.0, f"Training abgeschlossen in {format_elapsed_time(actual_seconds)}")
+        progress_callback(1.0, f"Training finished in {format_elapsed_time(actual_seconds)}")
 
     df_synth = synthesizer.sample(num_rows=total_rows)
     return TrainingResult(df_synth=df_synth, used_global_seed=used_global_seed, actual_seconds=actual_seconds)

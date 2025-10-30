@@ -2,47 +2,51 @@
 
 ## 1. Open-Source Landscape for Tabular Synthesis
 
-| Library | License | Stärken | Grenzen | Hinweise |
+| Library | License | Strengths | Limitations | Notes |
 | --- | --- | --- | --- | --- |
-| SDV (Synthetic Data Vault) | MIT | Reife Bibliothek mit Modulen für Single-/Multi-Table, Zeitreihen; SDMetrics-Evaluierung integriert; aktiver Support | Training kann bei großen Tabellen GPU/TPU erfordern; Dokumentation verteilt | https://sdv.dev
-| YData Synthetic | Apache-2.0 | GAN-/VAE-Modelle mit Fokus auf Datenqualität; einfache API, Tutorials; CLI & Notebook-Vorlagen | Vergleichsweise junges OSS-Projekt; Evaluierungen weniger umfangreich als SDV | https://github.com/ydataai/ydata-synthetic
-| Gretel Synthetics | Apache-2.0 | CLI/SDK, Differential-Privacy-Optionen, SaaS-Integration möglich; Beispiel-Notebooks | OSS-Kern liefert weniger Komfortfunktionen als SaaS; Abhängigkeit von TensorFlow | https://github.com/gretelai/gretel-synthetics
-| DataSynthesizer | MIT | Minimalistisch, schnell, einfache „mode/independent/correlated“-Strategien; gut für Prototyping | Weniger präzise bei komplexen Beziehungen; kaum automatische Evaluierung | https://github.com/DataResponsibly/DataSynthesizer
-| MOSTLY AI (Community) | Proprietär (Free Tier) | UI-geführte Pipeline, Out-of-the-box RLS; kostenlose Community-Edition für kleinere Datensätze | Kein Voll-Open-Source; Limits beim Datenvolumen; Account erforderlich | https://mostly.ai
+| SDV (Synthetic Data Vault) | MIT | Mature library with single-/multi-table and time-series modules; SDMetrics evaluation built in; active support | Training on large tables may require GPU/TPU; documentation is spread across sources | https://sdv.dev
+| YData Synthetic | Apache-2.0 | GAN/VAE models focused on data quality; simple API, tutorials; CLI and notebook templates | Relatively young OSS project; evaluations less extensive than SDV | https://github.com/ydataai/ydata-synthetic
+| Gretel Synthetics | Apache-2.0 | CLI/SDK, differential privacy options, optional SaaS integration; example notebooks | Open-source core has fewer convenience features than SaaS; depends on TensorFlow | https://github.com/gretelai/gretel-synthetics
+| DataSynthesizer | MIT | Minimalist, fast, simple "mode/independent/correlated" strategies; great for prototyping | Less precise for complex relationships; barely any automatic evaluation | https://github.com/DataResponsibly/DataSynthesizer
+| MOSTLY AI (Community) | Proprietary (free tier) | UI-guided pipeline, built-in RLS; free community edition for smaller datasets | Not fully open source; volume limits; account required | https://mostly.ai
 
-Für KMUs, die Cursor Vibe einsetzen möchten, empfiehlt sich ein Python-zentrierter Stack (SDV oder YData Synthetic). Beide lassen sich lokal ausführen, versionieren und automatisieren.
+SMBs adopting Cursor Vibe benefit from a Python-centric stack (SDV or YData Synthetic). Both can be run locally, versioned, and automated.
 
-## 2. Empfohlene Stack-Auswahl
+## 2. Recommended stack
 
-- **Primär: SDV (Single Table → `CTGANSynthesizer`)**
-  - Läuft vollständig lokal, Python ≥3.9.
-  - Enthält automatische Metadata-Erkennung (`SingleTableMetadata.detect_from_dataframe`).
-  - SDMetrics liefert sofort nutzbare Utility-/Privacy-Metriken.
-  - Große Community, langfristige Wartung.
+- **Primary: SDV (single table → `CTGANSynthesizer`)**
+  - Runs fully locally on Python ≥3.9.
+  - Includes automatic metadata detection (`SingleTableMetadata.detect_from_dataframe`).
+  - SDMetrics provides ready-to-use utility and privacy metrics.
+  - Large community with long-term maintenance.
 
 - **Optional: YData Synthetic**
-  - Alternative, wenn GAN-/TimeGAN-basierte Modelle mit GPU geplant sind.
-  - Notebook-First, gute Ergänzung für explorative Experimente.
+  - Consider when planning GAN/TimeGAN models with GPU support.
+  - Notebook-first experience, useful for exploratory experiments.
 
-## 3. Implementation Guide (Cursor Vibe)
+## 3. Implementation guide (Cursor Vibe)
 
-### 3.1 Umgebung vorbereiten
+### 3.1 Prepare the environment
 
-1. Virtuelle Umgebung anlegen (PowerShell):
+1. Create a virtual environment (PowerShell):
    ```powershell
-   py -3.10 -m venv .venv
+   py -3.13 -m venv .venv
    .\.venv\Scripts\Activate.ps1
    python -m pip install --upgrade pip
-   pip install "sdv[all]" pandas pyarrow streamlit
+   pip install -r requirements.txt
    ```
-2. Optional: Abhängigkeiten in `requirements.txt` einfrieren (`pip freeze > requirements.txt`).
+2. Optional: after updating packages, run `pip freeze > requirements.txt` to capture the state.
+3. Run the tests:
+   ```powershell
+   python -m pytest
+   ```
 
-### 3.2 Beispielskript (`sdv_tabular_example.py`)
+### 3.2 Sample script (`sdv_tabular_example.py`)
 
-Das Skript liest eine Beispieldatei, trainiert `CTGANSynthesizer` und schreibt ein synthetisches Dataset. Die Bewertung erfolgt über `evaluation_utils.run_quality_report`, das SDMetrics *QualityReport* kapselt.
+The script reads an example file, trains `CTGANSynthesizer`, and writes a synthetic dataset. Evaluation happens through `evaluation_utils.run_quality_report`, which wraps the SDMetrics *QualityReport*.
 
-- `synthesis_runner.py` stellt eine gemeinsame Laufzeit-Schicht bereit (Metadaten-Erkennung, Dauerheuristik, Fortschritts-Callbacks), die sowohl CLI als auch Streamlit nutzen.
-- CLI zeigt vor dem Start eine grobe Laufzeitabschätzung und während des Trainings einen aktualisierten Status (Heuristik).
+- `synthesis_runner.py` provides a shared runtime layer (metadata detection, duration heuristic, progress callbacks) consumed by both the CLI and Streamlit.
+- The CLI offers a rough runtime estimate before starting and updates progress during training (heuristic).
 
 ```text
 python sdv_tabular_example.py \
@@ -51,65 +55,65 @@ python sdv_tabular_example.py \
   --output data/synthetic.csv
 ```
 
-Wichtige Anpassungspunkte:
+Key customization points:
 
-- Datenschema: optional eigenes `metadata.json` nutzen (siehe SDV-Dokumentation).
-- Sampling: `--rows` steuert die Anzahl synthetischer Zeilen (Standard = Originalgröße).
-- Modellwahl: für sehr kleine Datensätze kann `GaussianCopulaSynthesizer` stabiler sein; Modell wird im Skript parametrisiert.
-- Reproduzierbarkeit: `--random-seed` setzt Modell-seitig `random_state` (CTGAN/TVAE). Falls das Modell keinen Parameter bietet (z. B. GaussianCopula), werden globale RNGs (Python/Numpy, optional Torch) gesät.
-- Streamlit UI lädt Datensatz und Metadaten gemeinsam gecacht (`load_dataset`), wodurch wiederholte Aufrufe schneller werden.
+- Data schema: optionally provide your own `metadata.json` (see SDV documentation).
+- Sampling: `--rows` controls how many synthetic rows are generated (default = original size).
+- Model choice: for very small datasets `GaussianCopulaSynthesizer` can be more stable; the script exposes the selection.
+- Reproducibility: `--random-seed` sets the model-level `random_state` (CTGAN/TVAE). If a model does not expose that parameter (for example GaussianCopula), global RNGs (Python/Numpy, optionally Torch) are seeded instead.
+- The Streamlit UI caches dataset and metadata together (`load_dataset`) so repeated interactions run faster.
 
-### 3.3 Notebooks und Tests
+### 3.3 Notebooks and tests
 
-- Cursor Vibe unterstützt Jupyter: `python -m ipykernel install --user --name sdv-env` und Notebook `.ipynb` erstellen.
-- Für Unit-Tests: `pytest` + Fixtures mit kleinen CSV-Dateien; SDV kann deterministische Seeds (`synthesizer.set_random_state`) setzen.
+- Cursor Vibe supports Jupyter: run `python -m ipykernel install --user --name sdv-env` and create an `.ipynb` notebook.
+- For unit tests: use `pytest` with fixtures based on small CSV files; SDV supports deterministic seeds (`synthesizer.set_random_state`).
 
-### 3.4 Streamlit UI (Optional)
+### 3.4 Streamlit UI (optional)
 
-- App starten:
+- Start the app:
   ```powershell
   streamlit run streamlit_app.py
   ```
-- Funktionen: CSV aus `data/` auswählen, Vorschau/Statistiken ansehen, gewünschte zusätzliche Zeilen festlegen, synthetische Daten generieren, Evaluation anzeigen, Ergebnis herunterladen.
-- Ausgabedateien werden im selben Verzeichnis wie das Original mit Suffix (Standard `_synthetic`) gespeichert; Beispiel: `patients_synthetic.csv`.
-- Evaluation nutzt SDMetrics *QualityReport* (via `evaluation_utils.run_quality_report`); Score, Detailmetriken und numerische Vergleichstabellen erscheinen unter „Ergebnisse & Validierung“.
-- Während der Synthese zeigt ein Fortschrittsbalken eine heuristische Restzeit an; nach Abschluss werden geschätzte und tatsächliche Dauer in der Zusammenfassung notiert. Der Tab „Infos“ speist sich aus `docs/explainers.md` und erklärt Modelle, Seeds & Kennzahlen.
-- Über den Expander „Trainingseinstellungen“ können bei CTGAN/TVAE optional `epochs` und `batch_size` angepasst werden (defaults: 300/500 bzw. 300/256).
-- Upload/Änderungen: CSV-Dateien können per Drag & Drop hochgeladen werden (werden in `data/` abgelegt). Externe Änderungen an der gewählten Datei werden anhand des Zeitstempels erkannt und führen zu einem Hinweis inkl. Neu-Laden der Daten.
-- Seeding: Die Streamlit-Oberfläche setzt den angegebenen Seed beim Instanziieren des Synthesizers; Modelle ohne `random_state` nutzen globales Seeding.
+- Features: pick a CSV from `data/`, inspect preview/statistics, set additional rows, generate synthetic data, review the evaluation, download the result.
+- Output files are saved alongside the original with a suffix (default `_synthetic`); for example `patients_synthetic.csv`.
+- Evaluation uses the SDMetrics *QualityReport* (via `evaluation_utils.run_quality_report`); scores, detailed metrics, and numeric comparison tables appear under "Results & Validation".
+- During synthesis a progress bar shows a heuristic estimate of the remaining time; after completion the summary notes estimated vs. actual duration. The "Info" tab sources its content from `docs/explainers.md` and explains models, seeds, and metrics.
+- The "Training settings" expander lets you optionally adjust `epochs` and `batch_size` for CTGAN/TVAE (defaults: 300/500 and 300/256 respectively).
+- Upload/changes: CSVs can be uploaded via drag & drop (saved in `data/`). External changes to the selected file are detected via timestamps and trigger a notice plus reload.
+- Seeding: the Streamlit UI applies the chosen seed when instantiating the synthesizer; models without `random_state` rely on global seeding.
 
-## 4. Qualität & Compliance
+## 4. Quality and compliance
 
-- **Utility-Metriken**
-  - `evaluation_utils.run_quality_report(real, synthetic, metadata)` → liefert Utility-Score [0,1] + Detailmetriken.
-  - Visualisierungen: `sdmetrics.visualization.get_column_plot` für Verteilungen.
+- **Utility metrics**
+  - `evaluation_utils.run_quality_report(real, synthetic, metadata)` returns a utility score [0,1] plus detailed metrics.
+  - Visualizations: use `sdmetrics.visualization.get_column_plot` for distributions.
 
-- **Privacy Checks**
-  - Attribute Disclosure: `sdmetrics.single_table.PrivacyReport` signalisiert Reidentifikationsrisiken.
-  - Distance-to-Closest-Record (DCR) prüfen und Schwellen (z. B. >0.1) dokumentieren.
-  - Differential Privacy: Falls erforderlich, `clamp` + `noise_multiplier` über DP-fähige Varianten (z. B. Gretel DP, OpenDP).
+- **Privacy checks**
+  - Attribute disclosure: `sdmetrics.single_table.PrivacyReport` highlights re-identification risks.
+  - Track Distance-to-Closest-Record (DCR) and document thresholds (for example >0.1).
+  - Differential privacy: if required, configure `clamp` and `noise_multiplier` via DP-capable variants (for example Gretel DP, OpenDP).
 
 - **Governance**
-  - Logging: Modellparameter, Trainingszeitpunkte, Seeds in YAML protokollieren.
-  - Data Minimization: Quellsamples pseudonymisieren/anonymisieren vor dem Training.
+  - Logging: record model parameters, training timestamps, and seeds in YAML.
+  - Data minimization: pseudonymize/anonymize source samples before training.
 
-## 5. Next Steps für KMU-Rollout
+## 5. Next steps for an SMB rollout
 
-- **Produktisierung**
-  - Script in CLI verpacken (`typer`/`click`), Artefakte in `artifacts/` ablegen.
-  - CI-Workflow (GitHub Actions/Azure DevOps) mit Tests + Qualitätsreporten automatisieren.
+- **Productization**
+  - Wrap the script in a CLI (`typer`/`click`) and store artifacts in `artifacts/`.
+  - Automate tests plus quality reports in CI (GitHub Actions/Azure DevOps).
 
 - **Deployment**
-  - Für Batch-Jobs: geplanter Task (Windows Scheduler) oder Docker-Container.
-  - Für Self-Service: FastAPI- oder Flask-Endpoint, der eingehende CSVs verarbeitet (nur in sicheren Umgebungen!).
+  - For batch jobs: scheduled task (Windows Scheduler) or Docker container.
+  - For self-service: provide a FastAPI or Flask endpoint that processes incoming CSVs (only in secure environments).
 
 - **Monitoring**
-  - Kennzahlen (Utility/Privacy Scores) in zentralem Dashboard halten.
-  - Regelmäßige Retrain-Zyklen definieren (z. B. monatlich, bei Schemaänderungen ad hoc).
+  - Track metrics (utility/privacy scores) in a central dashboard.
+  - Define retraining cycles (for example monthly, or ad hoc for schema changes).
 
 - **Compliance**
-  - Datenschutz-Folgenabschätzung dokumentieren (DSGVO Art. 35, falls nötig).
-  - Verträge: definieren, ob synthetische Daten als Betriebsgeheimnis gelten und wie Vertrieb erfolgt (SaaS vs. On-Premises).
+  - Document the data protection impact assessment (GDPR Art. 35 if applicable).
+  - Contracts: clarify whether synthetic data counts as trade secrets and how it is distributed (SaaS vs. on-premises).
 
-Damit steht ein Cursor-kompatibler Fahrplan: lokale Entwicklung in Python, reproduzierbare Scripts, evaluierte Qualität und klare nächste Schritte zur Produktivsetzung.
+This provides a Cursor-compatible roadmap: local Python development, reproducible scripts, validated quality, and clear next steps toward production.
 

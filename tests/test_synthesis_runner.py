@@ -16,8 +16,8 @@ from sdv.single_table import GaussianCopulaSynthesizer
 def test_duration_estimations():
     minutes = estimate_duration_minutes(100, 5, "ctgan", 0)
     assert minutes > 0
-    assert format_duration_label(0.4) == "< 1 Minute"
-    assert format_duration_label(20) == "ca. 15–30 Minuten"
+    assert format_duration_label(0.4) == "< 1 minute"
+    assert format_duration_label(20) == "approx. 15–30 minutes"
     assert format_remaining_seconds(45) == "45s"
     assert format_remaining_seconds(125) == "2m 5s"
     assert format_elapsed_time(0.3) == "<1s"

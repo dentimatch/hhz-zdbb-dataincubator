@@ -12,10 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import time
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Optional
 
 from sdv.single_table import (
     CTGANSynthesizer,
@@ -44,54 +41,54 @@ SYNTHESIZER_REGISTRY = {
 }
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate synthetic tabular data with SDV")
-    parser.add_argument("--csv", required=True, type=Path, help="Pfad zur Quelldatei (CSV)")
+    parser.add_argument("--csv", required=True, type=Path, help="Path to the source CSV file")
     parser.add_argument(
         "--output",
         type=Path,
         default=Path("synthetic_output.csv"),
-        help="Zielpfad für das synthetische Dataset",
+        help="Target path for the synthetic dataset",
     )
     parser.add_argument(
         "--rows",
         type=int,
         default=None,
-        help="Anzahl synthetischer Zeilen (Standard = Originalgröße)",
+        help="Number of synthetic rows (default = original size)",
     )
     parser.add_argument(
         "--metadata",
         type=Path,
         default=None,
-        help="Optionaler Pfad zu einer SDV-Metadatei (*.json)",
+        help="Optional path to an SDV metadata file (*.json)",
     )
     parser.add_argument(
         "--model",
         choices=tuple(SYNTHESIZER_REGISTRY.keys()),
         default="ctgan",
-        help="Zu verwendender Synthesizer",
+        help="Synthesizer to use",
     )
     parser.add_argument(
         "--random-seed",
         type=int,
         default=42,
-        help="Seed für reproduzierbare Ergebnisse",
+        help="Seed for reproducible results",
     )
     parser.add_argument(
         "--report",
         type=Path,
         default=None,
-        help="Optionaler JSON-Report mit Evaluationskennzahlen",
+        help="Optional JSON report with evaluation metrics",
     )
     parser.add_argument(
         "--epochs",
         type=int,
         default=None,
-        help="Optional: Trainings-Epochen (nur Synthesizer mit entsprechender Option)",
+        help="Optional: number of training epochs (only for synthesizers that support it)",
     )
     parser.add_argument(
         "--batch-size",
         type=int,
         default=None,
-        help="Optional: Trainings-Batchgröße (nur Synthesizer mit entsprechender Option)",
+        help="Optional: training batch size (only for synthesizers that support it)",
     )
     return parser.parse_args()
 
@@ -115,7 +112,7 @@ def main() -> None:
             f"{format_duration_label(est_minutes)} (heuristic based on dataset size/model)"
         )
 
-        sys.stderr.write("Training gestartet...\n")
+        sys.stderr.write("Training started...\n")
         sys.stderr.flush()
 
         def progress_callback(fraction: float, status_text: str) -> None:

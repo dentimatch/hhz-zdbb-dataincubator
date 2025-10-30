@@ -1,42 +1,42 @@
-# Synthesische Daten – Erklärungen
+# Synthetic Data – Explanations
 
-## Modelle
-- **CTGAN**: GAN-basierter Ansatz, stark für heterogene tabellarische Daten. Benötigt meist mehr Trainingszeit, liefert dafür differenziertere Verteilungen.
-- **GaussianCopula**: Modelliert Abhängigkeiten über Copulas; schnell, stabil bei kleineren Datensätzen oder wenn wenige Ausreißer vorhanden sind.
-- **TVAE**: Variational Autoencoder, geeignet für kontinuierliche Daten; liefert glatte Verteilungen, kann bei vielen kategorialen Merkmalen Vorverarbeitung erfordern.
+## Models
+- **CTGAN**: GAN-based approach, strong for heterogeneous tabular data. Typically needs more training time but yields richer distributions.
+- **GaussianCopula**: Models dependencies via copulas; fast and stable for smaller datasets or when you have few outliers.
+- **TVAE**: Variational Autoencoder suited for continuous data; produces smooth distributions but may require preprocessing when many categorical features are present.
 
-### Modellwahl
-1. *Datengröße klein (<1k Zeilen)* → GaussianCopulastart, danach CTGAN testen.
-2. *Viele kategoriale Spalten* → CTGAN bevorzugt.
-3. *Reine numerische Daten / Zeitreihen* → TVAE oder spezialisierte SDV-Zeitreihenmodule.
+### Choosing a model
+1. *Small datasets (<1k rows)* → start with GaussianCopula, then try CTGAN.
+2. *Many categorical columns* → favor CTGAN.
+3. *Purely numeric data / time series* → use TVAE or SDV's dedicated time-series modules.
 
-## Seeds & Reproduzierbarkeit
-- `random_state`-fähige Modelle (CTGAN, TVAE) übernehmen den Seed direkt.
-- Modelle ohne Seed-Parameter (GaussianCopula) verwenden globale Seeds (`seed_everything`).
-- Gleiche Seeds + identische Daten → deterministisch reproduzierbare Ergebnisse.
+## Seeds and reproducibility
+- Models with a `random_state` parameter (CTGAN, TVAE) take the seed directly.
+- Models without an explicit seed parameter (GaussianCopula) rely on global seeds (`seed_everything`).
+- Same seed plus identical data → deterministic, reproducible results.
 
-## Qualitätskennzahlen
-- **Utility Score**: Aggregierte Ähnlichkeit (0–1). 0.85+ = sehr gut, 0.7–0.85 = gut, 0.55–0.7 = akzeptabel, darunter neu konfigurieren.
-- **Column Shapes**: Vergleicht Verteilungen einzelner Spalten; hohe Abweichungen weisen auf fehlende Modellierung hin.
-- **Column Pair Trends**: Prüft Beziehungen zwischen Spaltenpaaren – wichtig für Feature Interaktionen.
-Tipps:
-- Bei niedrigem Utility Score Parameter justieren (Epochen, zusätzliche Zeilen reduzieren) oder Vorverarbeitung anpassen (Outlier entfernen, Kategorien zusammenfassen).
-- A/B-Vergleich mit Domainwissen kombinieren: Plots, Pivot-Tabellen, Testmodelle.
+## Quality metrics
+- **Utility score**: Aggregated similarity (0–1). 0.85+ = excellent, 0.7–0.85 = good, 0.55–0.7 = acceptable, below that: reconfigure.
+- **Column shapes**: Compare distributions of individual columns; large deviations point to missing modeling signal.
+- **Column pair trends**: Check relationships between column pairs—important for feature interactions.
+Tips:
+- If the utility score is low, adjust parameters (epochs, reduce additional rows) or tweak preprocessing (remove outliers, group categories).
+- Combine A/B comparisons with domain knowledge: charts, pivot tables, test models.
 
-## Workflow & Troubleshooting
-1. Daten prüfen → NaNs, Typen, Kategorien.
-2. Synthese mit Standardparametern starten.
-3. Ergebnisse bewerten → Utility Score + visuelle Checks.
-4. Iterieren: Seed variieren, Synthesizer wechseln, Features normalisieren.
-5. Dokumentation pflegen: Seed, Parameter, Evaluation im Report (`quality_report`).
+## Workflow and troubleshooting
+1. Inspect data → NaNs, types, categories.
+2. Start synthesis with default parameters.
+3. Evaluate results → utility score plus visual checks.
+4. Iterate: vary seeds, swap synthesizers, normalize features.
+5. Maintain documentation: seed, parameters, evaluation in the report (`quality_report`).
 
-## Laufzeit & Fortschritt
-- Die Laufzeitabschätzung basiert auf Datensatzgröße und Modell (Heuristik) und wird vor dem Training angezeigt.
-- Während des Trainings aktualisieren CLI und Streamlit den Fortschritt mit einer groben Restzeit (Fokus auf Pragmatik statt Genauigkeit).
-- Nach Abschluss werden geschätzte und tatsächliche Dauer gespeichert (CLI-Report, Streamlit-Zusammenfassung).
+## Runtime and progress
+- The runtime estimate is based on dataset size and model (heuristic) and is shown before training starts.
+- During training the CLI and Streamlit update progress with a rough remaining-time estimate (prioritizing pragmatism over accuracy).
+- After completion the estimated and actual durations are recorded (CLI report, Streamlit summary).
 
-## Weitere Ressourcen
-- SDV Dokus: https://docs.sdv.dev/
+## Further resources
+- SDV docs: https://docs.sdv.dev/
 - SDMetrics: https://docs.sdv.dev/sdmetrics/
-- Best Practices für Datenanonymisierung: https://opendp.org/
+- Best practices for data anonymization: https://opendp.org/
 

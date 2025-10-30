@@ -1,0 +1,24 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+env/
+venv/
+
+# Streamlit / cache
+streamlit_app.db
+.streamlit/
+
+# Data outputs
+data/*_synthetic.csv
+
+# OS / editor files
+.DS_Store
+Thumbs.db
+
+# Tests
+tests/__pycache__/
+
