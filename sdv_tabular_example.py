@@ -14,12 +14,6 @@ import json
 import sys
 from pathlib import Path
 
-from sdv.single_table import (
-    CTGANSynthesizer,
-    GaussianCopulaSynthesizer,
-    TVAESynthesizer,
-)
-
 from evaluation_utils import (
     error_suggestions,
     interpret_utility_score,
@@ -35,9 +29,9 @@ from synthesis_runner import (
 
 
 SYNTHESIZER_REGISTRY = {
-    "ctgan": CTGANSynthesizer,
-    "gaussiancopula": GaussianCopulaSynthesizer,
-    "tvae": TVAESynthesizer,
+    "ctgan": "CTGANSynthesizer",
+    "gaussiancopula": "GaussianCopulaSynthesizer",
+    "tvae": "TVAESynthesizer",
 }
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate synthetic tabular data with SDV")
@@ -77,6 +71,15 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=None,
         help="Optional JSON report with evaluation metrics",
+    )
+    parser.add_argument(
+        "--min-utility",
+        type=float,
+        default=None,
+        help=(
+            "Optional gate: exit with non-zero status if the utility score is below this threshold. "
+            "Useful for CI or automated checks."
+        ),
     )
     parser.add_argument(
         "--epochs",
@@ -165,6 +168,19 @@ def main() -> None:
         for warning in report_warnings:
             print(f"Warning: {warning}")
 
+        # Optional CI gating: fail the process if score is below threshold
+        if args.min_utility is not None:
+            try:
+                threshold = float(args.min_utility)
+            except (TypeError, ValueError):
+                threshold = None
+            if threshold is not None and evaluation_score < threshold:
+                print(
+                    f"Minimum utility threshold not met: score={evaluation_score:.3f} < min={threshold:.3f}",
+                    file=sys.stderr,
+                )
+                raise SystemExit(2)
+
         if args.report is not None:
             args.report.parent.mkdir(parents=True, exist_ok=True)
             report_payload = {
@@ -178,6 +194,7 @@ def main() -> None:
                 "actual_duration_seconds": actual_seconds,
                 "training_parameters": init_kwargs,
                 "quality_report": report_details.to_dict(orient="records"),
+                "min_utility": args.min_utility,
             }
             args.report.write_text(json.dumps(report_payload, indent=2), encoding="utf-8")
             print(f"Report written to {args.report}")

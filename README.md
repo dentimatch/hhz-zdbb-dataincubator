@@ -53,8 +53,8 @@ A lightweight toolbox for SMEs to convert tabular sample data into synthetic dat
   ```
 - Generated artifacts (for example `data/*_synthetic.csv`, `__pycache__/`, virtual environments) are excluded via `.gitignore` and not versioned.
 
-## Command-line usage
-The script `sdv_tabular_example.py` trains the SDV CTGAN synthesizer (or alternatives) on a selected CSV file and produces a synthetic variant.
+## Command-line usage (advanced/automation)
+The product is UI-first (Streamlit). The CLI `sdv_tabular_example.py` is kept for automation/CI and headless runs. It trains the SDV CTGAN synthesizer (or alternatives) on a selected CSV file and produces a synthetic variant.
 
 ### Example invocation
 ```powershell
@@ -72,6 +72,7 @@ python sdv_tabular_example.py `
 - `--model`: optional, choose from `ctgan`, `gaussiancopula`, `tvae`.
 - `--random-seed`: optional random seed for reproducible results. Models with a `random_state` parameter (CTGAN, TVAE) receive it directly; `GaussianCopula` falls back to global RNG seeds internally.
 - `--epochs`, `--batch-size`: optional overrides for the defaults in models that support these parameters (for example CTGAN/TVAE).
+- `--min-utility`: optional CI gate. Exits with non-zero status if the utility score is below the given threshold (e.g., `--min-utility 0.70`).
 - Before training you receive a rough time estimate; during training the CLI continuously updates the progress (heuristic based on dataset size and model type).
 
 ## Streamlit usage

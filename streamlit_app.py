@@ -19,11 +19,6 @@ import time
 
 import pandas as pd
 import streamlit as st
-from sdv.single_table import (
-    CTGANSynthesizer,
-    GaussianCopulaSynthesizer,
-    TVAESynthesizer,
-)
 
 from evaluation_utils import (
     error_suggestions,
@@ -42,15 +37,14 @@ from synthesis_runner import (
 
 APP_ROOT = Path(__file__).resolve().parent
 DATA_DIR = APP_ROOT / "data"
-EXPLAINER_PATH = APP_ROOT / "docs" / "explainers.md"
 DEFAULT_SUFFIX = "_synthetic"
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 SYNTHESIZER_REGISTRY = {
-    "CTGAN": CTGANSynthesizer,
-    "GaussianCopula": GaussianCopulaSynthesizer,
-    "TVAE": TVAESynthesizer,
+    "CTGAN": "CTGANSynthesizer",
+    "GaussianCopula": "GaussianCopulaSynthesizer",
+    "TVAE": "TVAESynthesizer",
 }
 
 MODEL_ADVANCED_CONFIGS = {
@@ -95,13 +89,6 @@ def load_dataset_cached(path: str, mtime: float) -> Tuple[pd.DataFrame, object]:
 
 
 @st.cache_data(show_spinner=False)
-def load_explainers() -> Optional[str]:
-    if not EXPLAINER_PATH.exists():
-        return None
-    return EXPLAINER_PATH.read_text(encoding="utf-8")
-
-
-@st.cache_data(show_spinner=False)
 def describe_numeric(df: pd.DataFrame) -> pd.DataFrame:
     numeric_df = df.select_dtypes(include=["number"])
     if numeric_df.empty:
@@ -134,7 +121,62 @@ def ensure_suffix(suffix: str) -> str:
 
 
 def app() -> None:
-    st.set_page_config(page_title="Synthetic Data Workbench", layout="wide")
+    st.set_page_config(
+        page_title="Synthetic Data Workbench", 
+        layout="wide",
+        initial_sidebar_state="expanded",
+        page_icon="🏠"
+    )
+    
+    # Hide Streamlit's automatic page navigation using CSS and JavaScript
+    # Also add styling to highlight the current page
+    nav_css = """
+    <style>
+    /* Hide Streamlit's automatic navigation completely - multiple selectors for reliability */
+    [data-testid="stSidebarNav"],
+    [data-testid="stSidebarNav"] *,
+    nav[data-testid="stSidebarNav"],
+    nav[data-testid="stSidebarNav"] ul,
+    nav[data-testid="stSidebarNav"] li,
+    section[data-testid="stSidebarNav"],
+    section[data-testid="stSidebarNav"] > * {
+        display: none !important;
+        visibility: hidden !important;
+        height: 0 !important;
+        width: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        opacity: 0 !important;
+    }
+    /* Highlight the Home page link */
+    div[data-testid="stSidebar"] a[href*="streamlit_app.py"] {
+        background-color: rgba(38, 39, 48, 0.6);
+        border-left: 3px solid #ff6b6b;
+        padding-left: 1rem;
+        border-radius: 0.25rem;
+    }
+    </style>
+    <script>
+    // Ensure navigation is hidden even if CSS doesn't catch it initially
+    window.addEventListener('load', function() {
+        const nav = document.querySelector('[data-testid="stSidebarNav"]');
+        if (nav) {
+            nav.style.display = 'none';
+            nav.style.visibility = 'hidden';
+            nav.style.height = '0';
+            nav.style.width = '0';
+        }
+    });
+    </script>
+    """
+    st.markdown(nav_css, unsafe_allow_html=True)
+    
+    # Add custom navigation links in sidebar
+    st.sidebar.markdown("### Navigation")
+    st.sidebar.page_link("streamlit_app.py", label="🏠 Home")
+    st.sidebar.page_link("pages/Info.py", label="📚 Info & Documentation")
+    st.sidebar.markdown("---")
+    
     st.title("Synthetic Data Workbench")
 
     csv_files = list_csv_files()
@@ -157,10 +199,46 @@ def app() -> None:
         target_path.write_bytes(uploaded_file.getbuffer())
         st.sidebar.success(f"File saved as `{target_path.name}`.")
         st.session_state["selected_path"] = target_path
-        st.experimental_rerun()
+        st.rerun()
 
     file_display = {file.name: file for file in csv_files}
-    selected_name = st.sidebar.selectbox("Select CSV file", options=list(file_display.keys()))
+    # Add placeholder option and check session state
+    options = ["-- Select a CSV file --"] + list(file_display.keys())
+    
+    # Get current selection from session state or default to placeholder
+    if "selected_path" in st.session_state:
+        current_selection = st.session_state["selected_path"]
+        # Find the index of the currently selected file
+        try:
+            selected_name = Path(current_selection).name
+            if selected_name in file_display:
+                default_index = list(file_display.keys()).index(selected_name) + 1
+            else:
+                default_index = 0
+        except (ValueError, AttributeError):
+            default_index = 0
+    else:
+        default_index = 0
+
+    selected_name = st.sidebar.selectbox("Select CSV file", options=options, index=default_index)
+
+    # If placeholder selected, show instructions and return early
+    if selected_name == "-- Select a CSV file --":
+        st.session_state.pop("selected_path", None)
+        st.session_state.pop("synthetic_result", None)
+        st.info("👈 Please select a CSV file from the sidebar to begin.")
+        st.markdown("""
+        ### Getting Started
+        
+        1. **Select a CSV file** from the dropdown in the sidebar
+        2. **Explore** the dataset statistics and preview
+        3. **Generate** synthetic data using one of the available models
+        4. **Review** the quality metrics and download results
+        
+        Upload new files using the file uploader in the sidebar.
+        """)
+        return
+
     selected_path = file_display[selected_name]
 
     selected_mtime = selected_path.stat().st_mtime
@@ -174,176 +252,186 @@ def app() -> None:
 
     st.session_state["file_tracking"] = {"path": str(selected_path), "mtime": selected_mtime}
 
+    # Always show headers - structure stays consistent
+    st.subheader("1. Explore the dataset")
+    section1_content = st.empty()
+    
+    st.subheader("2. Generate synthetic data")
+    section2_content = st.empty()
+
+    # Show loading states in content areas
+    with section1_content.container():
+        with st.spinner("Loading dataset and detecting metadata... This may take a few seconds."):
+            st.info("🔄 Analyzing dataset structure and preparing statistics...")
+    
+    with section2_content.container():
+        st.info("⏳ Waiting for dataset to load. The generation interface will appear shortly...")
+    
+    # Load data
     df_real, metadata = load_dataset_cached(str(selected_path), selected_mtime)
 
-    st.subheader("1. Explore the dataset")
-    st.write(f"**File:** `{selected_name}` | **Rows:** {len(df_real):,} | **Columns:** {len(df_real.columns)}")
+    # Replace loading content with actual content for Section 1
+    with section1_content.container():
+        st.write(f"**File:** `{selected_name}` | **Rows:** {len(df_real):,} | **Columns:** {len(df_real.columns)}")
 
-    tab_overview, tab_numeric, tab_categorical, tab_infos = st.tabs([
-        "Preview",
-        "Numeric statistics",
-        "Categorical values",
-        "Info",
-    ])
+        tab_overview, tab_numeric, tab_categorical = st.tabs([
+            "Preview",
+            "Numeric statistics",
+            "Categorical values",
+        ])
 
-    with tab_overview:
-        st.dataframe(df_real.head(), width="stretch")
-        st.caption("First 5 rows of the original dataset")
+        with tab_overview:
+            st.dataframe(df_real.head(), width="stretch")
+            st.caption("First 5 rows of the original dataset")
 
-    with tab_numeric:
-        numeric_stats = describe_numeric(df_real)
-        if numeric_stats.empty:
-            st.info("No numeric columns found.")
-        else:
-            st.dataframe(numeric_stats, width="stretch")
+        with tab_numeric:
+            numeric_stats = describe_numeric(df_real)
+            if numeric_stats.empty:
+                st.info("No numeric columns found.")
+            else:
+                st.dataframe(numeric_stats, width="stretch")
 
-    with tab_categorical:
-        value_counts = top_value_counts(df_real)
-        if not value_counts:
-            st.info("No categorical columns found.")
-        else:
-            for column, counts in value_counts.items():
-                with st.expander(f"Top values for {column}"):
-                    st.table(counts)
+        with tab_categorical:
+            value_counts = top_value_counts(df_real)
+            if not value_counts:
+                st.info("No categorical columns found.")
+            else:
+                for column, counts in value_counts.items():
+                    with st.expander(f"Top values for {column}"):
+                        st.table(counts)
 
-    with tab_infos:
-        explainer_md = load_explainers()
-        if explainer_md:
-            st.markdown(explainer_md)
-        else:
-            st.info("No additional information found. Please check `docs/explainers.md`.")
-
-    st.subheader("2. Generate synthetic data")
-
-    col_left, col_right = st.columns(2)
-    with col_left:
-        model_name = st.selectbox("Synthesizer", options=list(SYNTHESIZER_REGISTRY.keys()), index=0)
-        random_seed = int(
-            st.number_input("Random Seed", value=42, step=1, help="For reproducible results.")
-        )
-    with col_right:
-        additional_rows = st.number_input(
-            "Additional rows",
-            min_value=0,
-            max_value=int(len(df_real) * 50) if len(df_real) else 10000,
-            value=min(len(df_real), 1000),
-            help="Number of additional synthetic rows compared to the original.",
-        )
-        suffix = st.text_input("File suffix", value=DEFAULT_SUFFIX, help="Suffix for the output (e.g. _synthetic)")
-
-    init_kwargs: Dict[str, int] = {}
-    model_defaults = MODEL_ADVANCED_CONFIGS.get(model_name)
-    if model_defaults:
-        with st.expander("Training settings (optional)", expanded=False):
-            epochs_val = st.number_input(
-                "Epochs",
-                min_value=1,
-                max_value=5000,
-                value=model_defaults["epochs"],
-                step=10,
-                help="Number of training passes (higher = better quality, longer runtime).",
+    # Replace loading content with actual content for Section 2
+    with section2_content.container():
+        col_left, col_right = st.columns(2)
+        with col_left:
+            model_name = st.selectbox("Synthesizer", options=list(SYNTHESIZER_REGISTRY.keys()), index=0)
+            random_seed = int(
+                st.number_input("Random Seed", value=42, step=1, help="For reproducible results.")
             )
-            batch_size_val = st.number_input(
-                "Batch Size",
-                min_value=16,
-                max_value=4096,
-                value=model_defaults["batch_size"],
-                step=16,
-                help="Training batch size. Smaller values = more stable, longer runtime.",
+        with col_right:
+            additional_rows = st.number_input(
+                "Additional rows",
+                min_value=0,
+                max_value=int(len(df_real) * 50) if len(df_real) else 10000,
+                value=min(len(df_real), 1000),
+                help="Number of additional synthetic rows compared to the original.",
             )
-            init_kwargs["epochs"] = int(epochs_val)
-            init_kwargs["batch_size"] = int(batch_size_val)
+            suffix = st.text_input("File suffix", value=DEFAULT_SUFFIX, help="Suffix for the output (e.g. _synthetic)")
 
-    additional_rows_int = int(additional_rows)
-    total_rows = len(df_real) + additional_rows_int
-    estimated_minutes = estimate_duration_minutes(
-        rows=len(df_real),
-        columns=len(df_real.columns),
-        model_name=model_name,
-        additional_rows=additional_rows_int,
-    )
-    duration_label = format_duration_label(estimated_minutes)
-
-    st.markdown(
-        f"*Total synthetic rows*: **{total_rows:,}** (Original: {len(df_real):,} + Extra: {additional_rows_int:,})"
-    )
-    st.caption(
-        "Estimated duration: "
-        f"{duration_label} (heuristic based on dataset size and model)"
-    )
-
-    if st.button("Generate", type="primary"):
-        progress_placeholder = st.empty()
-
-        progress_bar = progress_placeholder.progress(
-            0,
-            text=f"Training started (≈ {duration_label})",
-        )
-
-        def progress_callback(fraction: float, status_text: str) -> None:
-            progress_bar.progress(min(fraction, 0.999), text=status_text)
-
-        try:
-            runner_result = run_training(
-                df_real=df_real,
-                metadata=metadata,
-                model_name=model_name,
-                random_seed=random_seed,
-                registry=SYNTHESIZER_REGISTRY,
-                total_rows=total_rows,
-                estimated_minutes=estimated_minutes,
-                progress_callback=progress_callback,
-                init_kwargs=init_kwargs,
-            )
-            progress_placeholder.empty()
-
-            df_synth = runner_result.df_synth
-            actual_duration_label = format_elapsed_time(runner_result.actual_seconds)
-
-            utility_score, report_details, report_warnings = run_quality_report(
-                df_real,
-                df_synth,
-                metadata,
-            )
-            suffix_normalized = ensure_suffix(suffix)
-            output_path = selected_path.with_name(f"{selected_path.stem}{suffix_normalized}.csv")
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            df_synth.to_csv(output_path, index=False)
-
-            base_hints: List[str] = [f"Training finished in {actual_duration_label}."]
-            if init_kwargs:
-                formatted = ", ".join(f"{key}={value}" for key, value in init_kwargs.items())
-                base_hints.append(f"Training parameters: {formatted}")
-            st.session_state["synthetic_result"] = SyntheticResult(
-                dataframe=df_synth,
-                output_path=output_path,
-                utility_score=utility_score,
-                model_name=model_name,
-                total_rows=total_rows,
-                additional_rows=int(additional_rows),
-                report_details=report_details,
-                random_seed=int(random_seed),
-                hints=base_hints,
-                duration_label=duration_label,
-                actual_duration_label=actual_duration_label,
-            )
-            if runner_result.used_global_seed:
-                st.info(
-                    "Note: the selected model does not support `random_state`. "
-                    "Global random generators were seeded with the provided value."
+        init_kwargs: Dict[str, int] = {}
+        model_defaults = MODEL_ADVANCED_CONFIGS.get(model_name)
+        if model_defaults:
+            with st.expander("Training settings (optional)", expanded=False):
+                epochs_val = st.number_input(
+                    "Epochs",
+                    min_value=1,
+                    max_value=5000,
+                    value=model_defaults["epochs"],
+                    step=10,
+                    help="Number of training passes (higher = better quality, longer runtime).",
                 )
-                st.session_state["synthetic_result"].hints.append(
-                    "Global random generators seeded with the provided value (model without random_state)."
+                batch_size_val = st.number_input(
+                    "Batch Size",
+                    min_value=16,
+                    max_value=4096,
+                    value=model_defaults["batch_size"],
+                    step=16,
+                    help="Training batch size. Smaller values = more stable, longer runtime.",
                 )
-            if report_warnings:
-                st.warning("\n".join(report_warnings))
-            st.success(f"Synthetic dataset saved as `{output_path.name}`")
-        except Exception as exc:  # pragma: no cover - Streamlit handles display
-            progress_placeholder.empty()
-            st.error(f"Error during generation: {exc}")
-            hints = error_suggestions(str(exc))
-            if hints:
-                st.info("Tips:\n- " + "\n- ".join(hints))
+                init_kwargs["epochs"] = int(epochs_val)
+                init_kwargs["batch_size"] = int(batch_size_val)
+
+        additional_rows_int = int(additional_rows)
+        total_rows = len(df_real) + additional_rows_int
+        estimated_minutes = estimate_duration_minutes(
+            rows=len(df_real),
+            columns=len(df_real.columns),
+            model_name=model_name,
+            additional_rows=additional_rows_int,
+        )
+        duration_label = format_duration_label(estimated_minutes)
+
+        st.markdown(
+            f"*Total synthetic rows*: **{total_rows:,}** (Original: {len(df_real):,} + Extra: {additional_rows_int:,})"
+        )
+        st.caption(
+            "Estimated duration: "
+            f"{duration_label} (heuristic based on dataset size and model)"
+        )
+
+        if st.button("Generate", type="primary"):
+            progress_placeholder = st.empty()
+
+            progress_bar = progress_placeholder.progress(
+                0,
+                text=f"Training started (≈ {duration_label})",
+            )
+
+            def progress_callback(fraction: float, status_text: str) -> None:
+                progress_bar.progress(min(fraction, 0.999), text=status_text)
+
+            try:
+                runner_result = run_training(
+                    df_real=df_real,
+                    metadata=metadata,
+                    model_name=model_name,
+                    random_seed=random_seed,
+                    registry=SYNTHESIZER_REGISTRY,
+                    total_rows=total_rows,
+                    estimated_minutes=estimated_minutes,
+                    progress_callback=progress_callback,
+                    init_kwargs=init_kwargs,
+                )
+                progress_placeholder.empty()
+
+                df_synth = runner_result.df_synth
+                actual_duration_label = format_elapsed_time(runner_result.actual_seconds)
+
+                utility_score, report_details, report_warnings = run_quality_report(
+                    df_real,
+                    df_synth,
+                    metadata,
+                )
+                suffix_normalized = ensure_suffix(suffix)
+                output_path = selected_path.with_name(f"{selected_path.stem}{suffix_normalized}.csv")
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                df_synth.to_csv(output_path, index=False)
+
+                base_hints: List[str] = [f"Training finished in {actual_duration_label}."]
+                if init_kwargs:
+                    formatted = ", ".join(f"{key}={value}" for key, value in init_kwargs.items())
+                    base_hints.append(f"Training parameters: {formatted}")
+                st.session_state["synthetic_result"] = SyntheticResult(
+                    dataframe=df_synth,
+                    output_path=output_path,
+                    utility_score=utility_score,
+                    model_name=model_name,
+                    total_rows=total_rows,
+                    additional_rows=int(additional_rows),
+                    report_details=report_details,
+                    random_seed=int(random_seed),
+                    hints=base_hints,
+                    duration_label=duration_label,
+                    actual_duration_label=actual_duration_label,
+                )
+                if runner_result.used_global_seed:
+                    st.info(
+                        "Note: the selected model does not support `random_state`. "
+                        "Global random generators were seeded with the provided value."
+                    )
+                    st.session_state["synthetic_result"].hints.append(
+                        "Global random generators seeded with the provided value (model without random_state)."
+                    )
+                if report_warnings:
+                    st.warning("\n".join(report_warnings))
+                st.success(f"Synthetic dataset saved as `{output_path.name}`")
+                st.rerun()
+            except Exception as exc:  # pragma: no cover - Streamlit handles display
+                progress_placeholder.empty()
+                st.error(f"Error during generation: {exc}")
+                hints = error_suggestions(str(exc))
+                if hints:
+                    st.info("Tips:\n- " + "\n- ".join(hints))
 
     result: Optional[SyntheticResult] = st.session_state.get("synthetic_result")
     if result:

@@ -9,10 +9,12 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Mapping, Optional, Tuple
+from typing import TYPE_CHECKING, Callable, Mapping, Optional, Tuple
 
 import pandas as pd
-from sdv.metadata import SingleTableMetadata
+
+if TYPE_CHECKING:
+    from sdv.metadata import SingleTableMetadata
 
 LOGGER = logging.getLogger(__name__)
 
@@ -31,13 +33,19 @@ class TrainingResult:
     actual_seconds: float
 
 
-def load_dataset(path: Path | str, metadata_path: Optional[Path] = None) -> Tuple[pd.DataFrame, SingleTableMetadata]:
+def load_dataset(path: Path | str, metadata_path: Optional[Path] = None) -> Tuple[pd.DataFrame, "SingleTableMetadata"]:
+    # Lazy import to avoid loading heavy SDV dependencies at startup
+    from sdv.metadata import SingleTableMetadata
+    
     dataframe = pd.read_csv(path)
     metadata = load_metadata(metadata_path, dataframe)
     return dataframe, metadata
 
 
-def load_metadata(path: Optional[Path], dataframe: pd.DataFrame) -> SingleTableMetadata:
+def load_metadata(path: Optional[Path], dataframe: pd.DataFrame) -> "SingleTableMetadata":
+    # Lazy import to avoid loading heavy SDV dependencies at startup
+    from sdv.metadata import SingleTableMetadata
+    
     metadata = SingleTableMetadata()
     if path and path.exists():
         metadata = SingleTableMetadata.load_from_json(path)
@@ -64,17 +72,36 @@ def seed_everything(seed: int) -> None:
 
 def build_synthesizer(
     name: str,
-    metadata: SingleTableMetadata,
-    registry: Mapping[str, type],
+    metadata: "SingleTableMetadata",
+    registry: Mapping[str, str],
     random_state: Optional[int],
     init_kwargs: Optional[dict] = None,
 ) -> Tuple[object, bool]:
+    # Lazy import to avoid loading heavy TensorFlow/PyTorch dependencies at startup
+    from sdv.single_table import (
+        CTGANSynthesizer,
+        GaussianCopulaSynthesizer,
+        TVAESynthesizer,
+    )
+
+    # Map string class names to actual classes
+    class_map = {
+        "CTGANSynthesizer": CTGANSynthesizer,
+        "GaussianCopulaSynthesizer": GaussianCopulaSynthesizer,
+        "TVAESynthesizer": TVAESynthesizer,
+    }
+
     normalized = {key.lower(): value for key, value in registry.items()}
     try:
-        SynthClass = normalized[name.lower()]
+        class_name = normalized[name.lower()]
     except KeyError as exc:  # pragma: no cover - defensive guard
         available = ", ".join(sorted(normalized))
         raise ValueError(f"Unknown synthesizer '{name}'. Options: {available}") from exc
+
+    try:
+        SynthClass = class_map[class_name]
+    except KeyError as exc:  # pragma: no cover - defensive guard
+        raise ValueError(f"Unknown synthesizer class '{class_name}'. Options: {', '.join(class_map.keys())}") from exc
 
     kwargs = {}
     used_global_seed = False
@@ -165,10 +192,10 @@ ProgressCallback = Callable[[float, str], None]
 
 def run_training(
     df_real: pd.DataFrame,
-    metadata: SingleTableMetadata,
+    metadata: "SingleTableMetadata",
     model_name: str,
     random_seed: int,
-    registry: Mapping[str, type],
+    registry: Mapping[str, str],
     total_rows: int,
     estimated_minutes: float,
     progress_callback: Optional[ProgressCallback] = None,

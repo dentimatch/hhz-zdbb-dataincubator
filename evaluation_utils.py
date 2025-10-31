@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
-from typing import List, Tuple
+from typing import TYPE_CHECKING, List, Tuple
 
 import pandas as pd
-from sdv.metadata import SingleTableMetadata
-from sdmetrics.reports.single_table import QualityReport
+
+if TYPE_CHECKING:
+    from sdv.metadata import SingleTableMetadata
 
 
 LOGGER = logging.getLogger(__name__)
@@ -22,9 +23,11 @@ ERROR_HINTS = [
 def run_quality_report(
     real_df: pd.DataFrame,
     synthetic_df: pd.DataFrame,
-    metadata: SingleTableMetadata,
+    metadata: "SingleTableMetadata",
 ) -> Tuple[float, pd.DataFrame, List[str]]:
     """Generate a SDMetrics QualityReport and return score, detail table, warnings."""
+    # Lazy import to avoid loading heavy SDMetrics dependencies at startup
+    from sdmetrics.reports.single_table import QualityReport
 
     report = QualityReport()
     report.generate(real_df, synthetic_df, metadata.to_dict())
