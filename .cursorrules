@@ -14,6 +14,9 @@ Key files:
 - `docs/explainers.md`: In-app knowledge
 - `README.md`: Setup and usage
 
+Process:
+- Feature implementation requires a corresponding User Story or Technical Task.
+
 Quality bar:
 - Utility score target: >= 0.7 (context-dependent)
 - Reproducibility: respect `random_state` if available; otherwise seed global RNGs
@@ -26,4 +29,3 @@ Common tasks:
 
 Do not:
 - Commit `.venv`, large artifacts, or generated CSVs
-

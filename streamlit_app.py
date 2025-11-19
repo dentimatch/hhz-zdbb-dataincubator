@@ -147,6 +147,7 @@ def app() -> None:
         margin: 0 !important;
         padding: 0 !important;
         opacity: 0 !important;
+        
     }
     /* Highlight the Home page link */
     div[data-testid="stSidebar"] a[href*="streamlit_app.py"] {
@@ -252,27 +253,31 @@ def app() -> None:
 
     st.session_state["file_tracking"] = {"path": str(selected_path), "mtime": selected_mtime}
 
-    # Always show headers - structure stays consistent
+    # Define containers for the new 4-step flow
     st.subheader("1. Explore the dataset")
     section1_content = st.empty()
     
-    st.subheader("2. Generate synthetic data")
+    st.subheader("2. Prepare & Transform")
     section2_content = st.empty()
 
-    # Show loading states in content areas
-    with section1_content.container():
-        with st.spinner("Loading dataset and detecting metadata... This may take a few seconds."):
-            st.info("🔄 Analyzing dataset structure and preparing statistics...")
-    
-    with section2_content.container():
-        st.info("⏳ Waiting for dataset to load. The generation interface will appear shortly...")
-    
-    # Load data
-    df_real, metadata = load_dataset_cached(str(selected_path), selected_mtime)
+    st.subheader("3. Generate synthetic data")
+    section3_content = st.empty()
 
-    # Replace loading content with actual content for Section 1
+    # Show loading states
     with section1_content.container():
-        st.write(f"**File:** `{selected_name}` | **Rows:** {len(df_real):,} | **Columns:** {len(df_real.columns)}")
+        with st.spinner("Loading dataset and detecting metadata..."):
+            st.info("🔄 Analyzing dataset...")
+
+    # Load data
+    df_original, metadata_original = load_dataset_cached(str(selected_path), selected_mtime)
+    df_train = df_original.copy()
+    metadata_train = metadata_original
+
+    # ------------------------------------------------------------------
+    # Step 1: Explore
+    # ------------------------------------------------------------------
+    with section1_content.container():
+        st.write(f"**File:** `{selected_name}` | **Rows:** {len(df_original):,} | **Columns:** {len(df_original.columns)}")
 
         tab_overview, tab_numeric, tab_categorical = st.tabs([
             "Preview",
@@ -281,18 +286,18 @@ def app() -> None:
         ])
 
         with tab_overview:
-            st.dataframe(df_real.head(), width="stretch")
+            st.dataframe(df_original.head(), width="stretch")
             st.caption("First 5 rows of the original dataset")
 
         with tab_numeric:
-            numeric_stats = describe_numeric(df_real)
+            numeric_stats = describe_numeric(df_original)
             if numeric_stats.empty:
                 st.info("No numeric columns found.")
             else:
                 st.dataframe(numeric_stats, width="stretch")
 
         with tab_categorical:
-            value_counts = top_value_counts(df_real)
+            value_counts = top_value_counts(df_original)
             if not value_counts:
                 st.info("No categorical columns found.")
             else:
@@ -300,8 +305,184 @@ def app() -> None:
                     with st.expander(f"Top values for {column}"):
                         st.table(counts)
 
-    # Replace loading content with actual content for Section 2
+    # ------------------------------------------------------------------
+    # Step 2: Prepare & Transform (US-1.1, US-2.x)
+    # ------------------------------------------------------------------
     with section2_content.container():
+        st.caption("Select columns to include in the synthetic data generation.")
+        
+        schema_data_key = f"schema_data_{selected_name}_{selected_mtime}"
+        schema_widget_key = f"schema_widget_{selected_name}_{selected_mtime}"
+        active_cols_key = f"active_columns_{selected_name}_{selected_mtime}"
+        renaming_map_key = f"renaming_map_{selected_name}_{selected_mtime}"  # New key for renaming
+        cleaned_df_key = f"cleaned_df_{selected_name}_{selected_mtime}"
+        cleaned_meta_key = f"cleaned_meta_{selected_name}_{selected_mtime}"
+
+        if schema_data_key not in st.session_state:
+            st.session_state[schema_data_key] = pd.DataFrame({
+                "Include": [True] * len(df_original.columns),
+                "Column": df_original.columns,
+                "Rename To": df_original.columns,  # Initialize with same names
+                "Type": df_original.dtypes.astype(str).values
+            })
+
+        # Unified Form for Selection, Renaming, and Cleaning
+        with st.form(key=f"config_form_{selected_name}_{selected_mtime}"):
+            st.subheader("Feature Selection & Renaming")
+            edited_schema = st.data_editor(
+                st.session_state[schema_data_key],
+                column_config={
+                    "Include": st.column_config.CheckboxColumn(
+                        "Train?",
+                        help="Uncheck to exclude this column from synthesis",
+                        default=True,
+                    ),
+                    "Column": st.column_config.TextColumn("Original Name", disabled=True),
+                    "Rename To": st.column_config.TextColumn("Rename To (Optional)", help="Edit this to rename the feature for training"),
+                    "Type": st.column_config.TextColumn("Detected Type", disabled=True),
+                },
+                disabled=["Column", "Type"],
+                hide_index=True,
+                use_container_width=True,
+                key=schema_widget_key,
+            )
+            
+            st.subheader("Data Cleaning")
+            # Cleaning options (always visible but conditional on execution)
+            # Restore previous strategy
+            cleaning_strategy_key = f"cleaning_strategy_{selected_name}_{selected_mtime}"
+            if cleaning_strategy_key not in st.session_state:
+                st.session_state[cleaning_strategy_key] = "Keep (let SDV handle it)"
+            
+            options = [
+                "Keep (let SDV handle it)",
+                "Drop rows with missing values",
+                "Fill with Mean/Mode",
+            ]
+            try:
+                current_index = options.index(st.session_state[cleaning_strategy_key])
+            except ValueError:
+                current_index = 0
+
+            nan_strategy_selection = st.radio(
+                "Handle missing values (if detected):",
+                options=options,
+                index=current_index,
+                horizontal=True,
+                help="These rules are applied only if missing values (NaNs) are found in the selected columns."
+            )
+            
+            confirm_config = st.form_submit_button("Confirm Configuration", type="primary")
+
+        if confirm_config:
+            # 1. Save Schema State
+            st.session_state[schema_data_key] = edited_schema.copy()
+            st.session_state[cleaning_strategy_key] = nan_strategy_selection
+            
+            # 2. Extract Selection & Renaming
+            included_df = edited_schema[edited_schema["Include"]]
+            candidate_cols = included_df["Column"].tolist()
+            
+            new_renaming_map = {}
+            for _, row in included_df.iterrows():
+                orig = row["Column"]
+                new_name = row["Rename To"]
+                if new_name and new_name.strip() and new_name != orig:
+                    new_renaming_map[orig] = new_name.strip()
+
+            if not candidate_cols:
+                st.warning("⚠️ At least one column must be included. Configuration not updated.")
+            else:
+                # 3. Update Active Selection
+                st.session_state[active_cols_key] = candidate_cols
+                st.session_state[renaming_map_key] = new_renaming_map
+                
+                # Clear old cleaning results to ensure fresh processing
+                st.session_state.pop(cleaned_df_key, None)
+                st.session_state.pop(cleaned_meta_key, None)
+                
+                # 4. Create Draft & Rename
+                temp_draft = df_original[candidate_cols].copy()
+                if new_renaming_map:
+                    temp_draft.rename(columns=new_renaming_map, inplace=True)
+                
+                # 5. Check & Apply Cleaning
+                has_nans = temp_draft.isnull().values.any()
+                final_df = temp_draft
+                msg = f"✅ Configured: {len(candidate_cols)} columns selected"
+                
+                if new_renaming_map:
+                    msg += f", {len(new_renaming_map)} renamed"
+                
+                if has_nans and nan_strategy_selection != "Keep (let SDV handle it)":
+                    if nan_strategy_selection == "Drop rows with missing values":
+                        before = len(final_df)
+                        final_df = final_df.dropna()
+                        dropped = before - len(final_df)
+                        msg += f", {dropped} rows dropped (cleaning)"
+                    elif nan_strategy_selection == "Fill with Mean/Mode":
+                        filled_count = 0
+                        for col in final_df.columns:
+                            if final_df[col].isnull().any():
+                                if final_df[col].dtype.kind in "biufc":
+                                    final_df[col] = final_df[col].fillna(final_df[col].mean())
+                                else:
+                                    mode_val = final_df[col].mode()
+                                    fill_val = mode_val[0] if not mode_val.empty else "Missing"
+                                    final_df[col] = final_df[col].fillna(fill_val)
+                                filled_count += 1
+                        msg += f", {filled_count} cols filled (cleaning)"
+                    
+                    # Save Cleaned Data
+                    from sdv.metadata import SingleTableMetadata
+                    new_meta = SingleTableMetadata()
+                    new_meta.detect_from_dataframe(final_df)
+                    st.session_state[cleaned_df_key] = final_df
+                    st.session_state[cleaned_meta_key] = new_meta
+                    msg += "."
+                elif has_nans:
+                    msg += ". (NaNs preserved)."
+                else:
+                    msg += ". (No NaNs found)."
+
+                st.success(msg)
+                st.rerun()
+
+        # --- Logic to Prepare Downstream Data (Read-Only View) ---
+        if active_cols_key not in st.session_state:
+            st.session_state[active_cols_key] = list(df_original.columns)
+        if renaming_map_key not in st.session_state:
+            st.session_state[renaming_map_key] = {}
+            
+        selected_cols = st.session_state[active_cols_key]
+        renaming_map = st.session_state[renaming_map_key]
+        
+        # Reconstruct the effective training data from state
+        # (Use cached cleaned data if available, else re-derive raw subset)
+        if cleaned_df_key in st.session_state:
+            df_train = st.session_state[cleaned_df_key]
+            metadata_train = st.session_state[cleaned_meta_key]
+            status_msg = "✅ **Ready for Training** (Cleaned)"
+        else:
+            # Re-derive raw
+            df_train = df_original[selected_cols].copy()
+            if renaming_map:
+                df_train.rename(columns=renaming_map, inplace=True)
+                
+            if set(df_train.columns) == set(df_original.columns) and not renaming_map:
+                metadata_train = metadata_original
+            else:
+                from sdv.metadata import SingleTableMetadata
+                metadata_train = SingleTableMetadata()
+                metadata_train.detect_from_dataframe(df_train)
+            status_msg = "✅ **Ready for Training** (Raw)"
+
+        st.markdown(f"{status_msg} | Rows: {len(df_train):,} | Columns: {len(df_train.columns)}")
+
+    # ------------------------------------------------------------------
+    # Step 3: Generate
+    # ------------------------------------------------------------------
+    with section3_content.container():
         col_left, col_right = st.columns(2)
         with col_left:
             model_name = st.selectbox("Synthesizer", options=list(SYNTHESIZER_REGISTRY.keys()), index=0)
@@ -312,8 +493,8 @@ def app() -> None:
             additional_rows = st.number_input(
                 "Additional rows",
                 min_value=0,
-                max_value=int(len(df_real) * 50) if len(df_real) else 10000,
-                value=min(len(df_real), 1000),
+                max_value=int(len(df_train) * 50) if len(df_train) else 10000,
+                value=min(len(df_train), 1000),
                 help="Number of additional synthetic rows compared to the original.",
             )
             suffix = st.text_input("File suffix", value=DEFAULT_SUFFIX, help="Suffix for the output (e.g. _synthetic)")
@@ -342,17 +523,17 @@ def app() -> None:
                 init_kwargs["batch_size"] = int(batch_size_val)
 
         additional_rows_int = int(additional_rows)
-        total_rows = len(df_real) + additional_rows_int
+        total_rows = len(df_train) + additional_rows_int
         estimated_minutes = estimate_duration_minutes(
-            rows=len(df_real),
-            columns=len(df_real.columns),
+            rows=len(df_train),
+            columns=len(df_train.columns),
             model_name=model_name,
             additional_rows=additional_rows_int,
         )
         duration_label = format_duration_label(estimated_minutes)
 
         st.markdown(
-            f"*Total synthetic rows*: **{total_rows:,}** (Original: {len(df_real):,} + Extra: {additional_rows_int:,})"
+            f"*Total synthetic rows*: **{total_rows:,}** (Original: {len(df_train):,} + Extra: {additional_rows_int:,})"
         )
         st.caption(
             "Estimated duration: "
@@ -372,8 +553,8 @@ def app() -> None:
 
             try:
                 runner_result = run_training(
-                    df_real=df_real,
-                    metadata=metadata,
+                    df_real=df_train,
+                    metadata=metadata_train,
                     model_name=model_name,
                     random_seed=random_seed,
                     registry=SYNTHESIZER_REGISTRY,
@@ -388,7 +569,7 @@ def app() -> None:
                 actual_duration_label = format_elapsed_time(runner_result.actual_seconds)
 
                 utility_score, report_details, report_warnings = run_quality_report(
-                    df_real,
+                    df_train,
                     df_synth,
                     metadata,
                 )
@@ -433,9 +614,12 @@ def app() -> None:
                 if hints:
                     st.info("Tips:\n- " + "\n- ".join(hints))
 
+    # ------------------------------------------------------------------
+    # Step 4: Evaluate (Existing Logic)
+    # ------------------------------------------------------------------
     result: Optional[SyntheticResult] = st.session_state.get("synthetic_result")
     if result:
-        st.subheader("3. Results & validation")
+        st.subheader("4. Results & validation")
 
         metric_cols = st.columns(4)
         metric_cols[0].metric(
@@ -492,9 +676,10 @@ def app() -> None:
 
         with compare_tab:
             synth_numeric = describe_numeric(result.dataframe)
-            if not synth_numeric.empty and not describe_numeric(df_real).empty:
+            train_numeric = describe_numeric(df_train)
+            if not synth_numeric.empty and not train_numeric.empty:
                 combined = (
-                    describe_numeric(df_real)
+                    train_numeric
                     .add_suffix("_original")
                     .join(synth_numeric.add_suffix("_synthetic"), how="outer")
                 )
@@ -541,4 +726,3 @@ def app() -> None:
 
 if __name__ == "__main__":
     app()
-
