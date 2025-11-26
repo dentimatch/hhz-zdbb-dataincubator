@@ -36,6 +36,7 @@ Focus on building trust in the synthetic data.
 
 #### US-1.1 Basic Data Cleaning
 - **Description**: As a user, I want to drop columns or handle simple NaNs so that I don't need to prep data in Excel or Python scripts beforehand.
+- **Status**: ✅ Completed
 - **Acceptance Criteria**:
   - Option to select columns to drop (exclude from training).
   - Option to fill NaNs with a simple strategy (e.g., mean/mode) or drop rows with missing values.
@@ -45,6 +46,7 @@ Focus on building trust in the synthetic data.
 
 #### US-2.1 Feature Renaming & Translation
 - **Description**: As a user, I want to rename or translate columns (e.g., "Alter" -> "Age", "Geschlecht" -> "Gender") so that the external example data matches our internal naming conventions.
+- **Status**: ✅ Completed
 - **Acceptance Criteria**:
   - UI provides a mapping interface (Old Name -> New Name).
   - Renaming is applied before training so the synthetic output has the correct schema.

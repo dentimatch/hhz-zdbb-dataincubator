@@ -96,17 +96,23 @@ The web application provides a guided workflow for non-technical users.
 ### Feature overview
 1. **Select file** – dropdown lists every CSV file in `data/`.
 2. **Descriptive statistics** – preview of the first rows, numeric KPIs, top categories.
-3. **Configure synthesis** – choose the SDV model, seed (for reproducible runs), number of additional rows, and output suffix.
-4. **Generate and save** – creates the synthetic dataset and writes it as a CSV next to the original using the suffix (default `_synthetic`). A download button is provided.
-5. **Evaluation** – SDMetrics *QualityReport* supplies utility scores (0–1) plus detailed metrics; numeric KPIs are compared side by side.
-6. **Info** – tab with explanatory content sourced from `docs/explainers.md` (models, seeds, metrics, workflow tips).
+3. **Prepare & Transform** – select specific columns, rename features, and handle missing values (drop rows or fill) in a single configuration step.
+4. **Configure synthesis** – choose the SDV model, seed (for reproducible runs), number of additional rows, and output suffix.
+5. **Generate and save** – creates the synthetic dataset and writes it as a CSV next to the original using the suffix (default `_synthetic`). A download button is provided.
+6. **Evaluation** – SDMetrics *QualityReport* supplies utility scores (0–1) plus detailed metrics; numeric KPIs are compared side by side.
+7. **Info** – tab with explanatory content sourced from `docs/explainers.md` (models, seeds, metrics, workflow tips).
 
 ### Typical flow inside the app
 1. Pick a CSV in the sidebar dropdown.
 2. Review the statistics (tabs "Preview", "Numeric Statistics", "Categorical Values").
-3. Fill in the form (model, seed, extra rows, suffix) and click "Generate".
-4. Optional: use the "Training settings" expander to adjust epochs/batch size (for CTGAN/TVAE).
-5. Wait for the synthesis to complete. The progress bar continuously estimates the remaining time. Once finished, metrics, comparison tables, and the download link appear.
+3. In the "Prepare & Transform" section:
+   - Uncheck columns to exclude them.
+   - Rename columns (e.g., "Alter" -> "Age") if needed.
+   - Select a cleaning strategy for missing values (Keep, Drop rows, or Fill with Mean/Mode).
+   - Click "Confirm Configuration".
+4. Fill in the generation form (model, seed, extra rows, suffix) and click "Generate".
+5. Optional: use the "Training settings" expander to adjust epochs/batch size (for CTGAN/TVAE).
+6. Wait for the synthesis to complete. The progress bar continuously estimates the remaining time. Once finished, metrics, comparison tables, and the download link appear.
 
 ## Interpreting the results
 - **Utility score** (0–1): indicates how similar the original and synthetic data behave. Values above 0.7 are often considered good, but thresholds depend on the use case. The score comes from the SDMetrics *QualityReport*.

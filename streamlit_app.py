@@ -35,6 +35,12 @@ from synthesis_runner import (
 )
 
 
+from viz_utils import (
+    plot_categorical_distribution,
+    plot_correlation_heatmap,
+    plot_numeric_distribution,
+)
+
 APP_ROOT = Path(__file__).resolve().parent
 DATA_DIR = APP_ROOT / "data"
 DEFAULT_SUFFIX = "_synthetic"
@@ -317,6 +323,7 @@ def app() -> None:
         renaming_map_key = f"renaming_map_{selected_name}_{selected_mtime}"  # New key for renaming
         cleaned_df_key = f"cleaned_df_{selected_name}_{selected_mtime}"
         cleaned_meta_key = f"cleaned_meta_{selected_name}_{selected_mtime}"
+        scaling_rules_key = f"scaling_rules_{selected_name}_{selected_mtime}"
 
         if schema_data_key not in st.session_state:
             st.session_state[schema_data_key] = pd.DataFrame({
@@ -326,7 +333,7 @@ def app() -> None:
                 "Type": df_original.dtypes.astype(str).values
             })
 
-        # Unified Form for Selection, Renaming, and Cleaning
+        # Unified Form for Selection, Renaming, Cleaning, and Scaling
         with st.form(key=f"config_form_{selected_name}_{selected_mtime}"):
             st.subheader("Feature Selection & Renaming")
             edited_schema = st.data_editor(
@@ -372,12 +379,53 @@ def app() -> None:
                 help="These rules are applied only if missing values (NaNs) are found in the selected columns."
             )
             
+            st.subheader("Value Scaling (Optional)")
+            with st.expander("Configure Numeric Scaling"):
+                st.caption("Linearly scale numeric columns to a new target range (e.g., 0-100 → 0-1).")
+                
+                # Prepare initial scaling DataFrame
+                # We need to know which columns are numeric from the *original* set that are currently included
+                # Since we are inside the form, we can't get the exact live inclusion state easily without rerun,
+                # so we use the schema state.
+                current_schema = st.session_state[schema_data_key]
+                numeric_cols = current_schema[current_schema["Type"].str.contains("int|float")]["Column"].tolist()
+                
+                if scaling_rules_key not in st.session_state:
+                    # Initialize empty rules for all numeric columns
+                    st.session_state[scaling_rules_key] = pd.DataFrame({
+                        "Column": numeric_cols,
+                        "Target Min": [None] * len(numeric_cols),
+                        "Target Max": [None] * len(numeric_cols)
+                    })
+                
+                # Ensure the scaling editor only shows columns that exist (in case file changed/reloaded)
+                # We sync the rows to match available numeric columns
+                existing_rules = st.session_state[scaling_rules_key]
+                # Merge to keep existing rules but add/remove columns
+                scaling_df_template = pd.DataFrame({"Column": numeric_cols})
+                merged_scaling = pd.merge(scaling_df_template, existing_rules, on="Column", how="left")
+                st.session_state[scaling_rules_key] = merged_scaling
+
+                edited_scaling = st.data_editor(
+                    st.session_state[scaling_rules_key],
+                    column_config={
+                        "Column": st.column_config.TextColumn("Numeric Column", disabled=True),
+                        "Target Min": st.column_config.NumberColumn("Target Min", help="New minimum value", required=False),
+                        "Target Max": st.column_config.NumberColumn("Target Max", help="New maximum value", required=False),
+                    },
+                    disabled=["Column"],
+                    hide_index=True,
+                    use_container_width=True,
+                    key=f"scaling_editor_{selected_name}_{selected_mtime}"
+                )
+
             confirm_config = st.form_submit_button("Confirm Configuration", type="primary")
 
         if confirm_config:
-            # 1. Save Schema State
+            # 1. Save Schema & Scaling State
             st.session_state[schema_data_key] = edited_schema.copy()
             st.session_state[cleaning_strategy_key] = nan_strategy_selection
+            st.session_state[scaling_rules_key] = edited_scaling.copy()
             
             # 2. Extract Selection & Renaming
             included_df = edited_schema[edited_schema["Include"]]
@@ -409,17 +457,17 @@ def app() -> None:
                 # 5. Check & Apply Cleaning
                 has_nans = temp_draft.isnull().values.any()
                 final_df = temp_draft
-                msg = f"✅ Configured: {len(candidate_cols)} columns selected"
+                msg_parts = [f"✅ Configured: {len(candidate_cols)} columns selected"]
                 
                 if new_renaming_map:
-                    msg += f", {len(new_renaming_map)} renamed"
+                    msg_parts.append(f"{len(new_renaming_map)} renamed")
                 
                 if has_nans and nan_strategy_selection != "Keep (let SDV handle it)":
                     if nan_strategy_selection == "Drop rows with missing values":
                         before = len(final_df)
                         final_df = final_df.dropna()
                         dropped = before - len(final_df)
-                        msg += f", {dropped} rows dropped (cleaning)"
+                        msg_parts.append(f"{dropped} rows dropped (cleaning)")
                     elif nan_strategy_selection == "Fill with Mean/Mode":
                         filled_count = 0
                         for col in final_df.columns:
@@ -431,20 +479,59 @@ def app() -> None:
                                     fill_val = mode_val[0] if not mode_val.empty else "Missing"
                                     final_df[col] = final_df[col].fillna(fill_val)
                                 filled_count += 1
-                        msg += f", {filled_count} cols filled (cleaning)"
-                    
-                    # Save Cleaned Data
-                    from sdv.metadata import SingleTableMetadata
-                    new_meta = SingleTableMetadata()
-                    new_meta.detect_from_dataframe(final_df)
-                    st.session_state[cleaned_df_key] = final_df
-                    st.session_state[cleaned_meta_key] = new_meta
-                    msg += "."
-                elif has_nans:
-                    msg += ". (NaNs preserved)."
-                else:
-                    msg += ". (No NaNs found)."
+                        msg_parts.append(f"{filled_count} cols filled (cleaning)")
+                
+                # 6. Apply Scaling (US-2.2)
+                # Filter rules where both Min and Max are provided
+                scaling_todo = edited_scaling.dropna(subset=["Target Min", "Target Max"])
+                scaled_count = 0
+                
+                if not scaling_todo.empty:
+                    for _, rule in scaling_todo.iterrows():
+                        orig_col_name = rule["Column"]
+                        # Map back to the *renamed* column name if applicable
+                        target_col_name = new_renaming_map.get(orig_col_name, orig_col_name)
+                        
+                        if target_col_name in final_df.columns:
+                             t_min = rule["Target Min"]
+                             t_max = rule["Target Max"]
+                             
+                             if t_min >= t_max:
+                                 st.warning(f"⚠️ Scaling skipped for '{target_col_name}': Target Min ({t_min}) must be less than Target Max ({t_max}).")
+                                 continue
 
+                             col_data = final_df[target_col_name]
+                             # Skip if non-numeric (sanity check)
+                             if not pd.api.types.is_numeric_dtype(col_data):
+                                 continue
+                                 
+                             c_min = col_data.min()
+                             c_max = col_data.max()
+                             
+                             if c_min == c_max:
+                                 # Constant column, set to average of target range or just min?
+                                 # Standard min-max usually maps to min.
+                                 final_df[target_col_name] = t_min
+                             else:
+                                 # Apply Formula: (X - min) / (max - min) * (t_max - t_min) + t_min
+                                 scale_factor = (t_max - t_min) / (c_max - c_min)
+                                 final_df[target_col_name] = (col_data - c_min) * scale_factor + t_min
+                             
+                             scaled_count += 1
+                    
+                    if scaled_count > 0:
+                        msg_parts.append(f"{scaled_count} cols scaled")
+
+                # Save Final Data state
+                # Always detect metadata from the FINAL transformed dataframe to capture scaling/cleaning effects
+                from sdv.metadata import SingleTableMetadata
+                new_meta = SingleTableMetadata()
+                new_meta.detect_from_dataframe(final_df)
+                st.session_state[cleaned_df_key] = final_df
+                st.session_state[cleaned_meta_key] = new_meta
+                
+                # Construct success message
+                msg = ", ".join(msg_parts) + "."
                 st.success(msg)
                 st.rerun()
 
@@ -571,7 +658,7 @@ def app() -> None:
                 utility_score, report_details, report_warnings = run_quality_report(
                     df_train,
                     df_synth,
-                    metadata,
+                    metadata_train,
                 )
                 suffix_normalized = ensure_suffix(suffix)
                 output_path = selected_path.with_name(f"{selected_path.stem}{suffix_normalized}.csv")
@@ -669,49 +756,119 @@ def app() -> None:
         else:
             st.caption("No notes available.")
 
-        preview_tab, compare_tab = st.tabs(["Synthetic preview", "Comparison"])
+        preview_tab, dist_tab, corr_tab, metrics_tab = st.tabs([
+            "Synthetic Preview", 
+            "Distributions", 
+            "Correlations",
+            "Metrics & Stats"
+        ])
+        
         with preview_tab:
             st.dataframe(result.dataframe.head(), width="stretch")
             st.caption("First 5 rows of the synthetic dataset")
+            
+        with dist_tab:
+            st.markdown("### Distribution Comparison")
+            st.caption("Compare the shape of distributions between Real (Blue) and Synthetic (Red) data.")
+            
+            # Select column to visualize
+            all_cols = df_train.columns.tolist()
+            col_to_plot = st.selectbox("Select column to visualize", options=all_cols)
+            
+            if col_to_plot:
+                is_numeric = pd.api.types.is_numeric_dtype(df_train[col_to_plot])
+                if is_numeric:
+                    fig = plot_numeric_distribution(df_train, result.dataframe, col_to_plot)
+                    st.pyplot(fig)
+                else:
+                    # Categorical
+                    # Check cardinality to avoid massive plots
+                    unique_count = df_train[col_to_plot].nunique()
+                    if unique_count > 50:
+                        st.warning(f"Column '{col_to_plot}' has {unique_count} unique values. Visualizing top 20.")
+                        # Logic handles in plot? No, let's rely on the helper or just show warning
+                        # Our helper currently shows all. Let's update helper if needed, or just plot.
+                        fig = plot_categorical_distribution(df_train, result.dataframe, col_to_plot)
+                        st.pyplot(fig)
+                    else:
+                        fig = plot_categorical_distribution(df_train, result.dataframe, col_to_plot)
+                        st.pyplot(fig)
 
-        with compare_tab:
+        with corr_tab:
+            st.markdown("### Correlation Analysis")
+            st.caption("Heatmaps showing relationships between numeric variables.")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                fig_real = plot_correlation_heatmap(df_train, "Real Data Correlations")
+                if fig_real:
+                    st.pyplot(fig_real)
+                else:
+                    st.info("Not enough numeric columns for correlation.")
+            
+            with col2:
+                fig_synth = plot_correlation_heatmap(result.dataframe, "Synthetic Data Correlations")
+                if fig_synth:
+                    st.pyplot(fig_synth)
+        
+        with metrics_tab:
+            st.markdown("### Statistical Comparison")
+            
+            # Numeric Stats Comparison
             synth_numeric = describe_numeric(result.dataframe)
             train_numeric = describe_numeric(df_train)
+            
             if not synth_numeric.empty and not train_numeric.empty:
-                combined = (
-                    train_numeric
-                    .add_suffix("_original")
-                    .join(synth_numeric.add_suffix("_synthetic"), how="outer")
-                )
-                st.dataframe(combined, width="stretch")
+                # Simplify table: Show Mean, Std, Min, Max differences
+                # Pivot to: Column | Real Mean | Synth Mean | Real Std | Synth Std
+                
+                comparison_df = pd.DataFrame({
+                    "Real Mean": train_numeric["mean"],
+                    "Synth Mean": synth_numeric["mean"],
+                    "Real Std": train_numeric["std"],
+                    "Synth Std": synth_numeric["std"]
+                })
+                # Calculate Diff %
+                # comparison_df["Mean Diff %"] = ((comparison_df["Synth Mean"] - comparison_df["Real Mean"]) / comparison_df["Real Mean"]).abs() * 100
+                
+                st.dataframe(comparison_df, width="stretch")
+                st.caption("Side-by-side comparison of key statistical properties.")
             else:
-                st.info("Numeric metrics could not be compared.")
+                st.info("No numeric columns to compare.")
 
-        with st.expander("Detailed quality metrics"):
+            st.markdown("### Detailed Quality Metrics (SDMetrics)")
             details = result.report_details
             if details.empty:
                 st.info("No detailed metrics available.")
-            elif "property" not in details.columns:
-                st.dataframe(details, width="stretch")
             else:
-                property_labels = {
-                    "Column Shapes": "Column Shapes",
-                    "Column Pair Trends": "Column Pair Trends",
-                }
-                categories = list(details["property"].unique())
-                tab_labels = [property_labels.get(cat, cat) for cat in categories]
-                tabs = st.tabs(tab_labels)
-                for tab, category in zip(tabs, categories):
-                    with tab:
-                        subset = details[details["property"] == category].drop(
-                            columns=["property"],
-                            errors="ignore",
-                        )
-                        st.dataframe(subset, width="stretch")
-                        st.caption(
-                            "Metrics for "
-                            f"{property_labels.get(category, category)}"
-                        )
+                # Clean up details table
+                # Available columns usually: Column, Metric, Score, Error, etc.
+                # Filter redundant cols if possible
+                
+                if "property" in details.columns:
+                    categories = list(details["property"].unique())
+                    property_labels = {
+                        "Column Shapes": "Column Shapes (Distributions)",
+                        "Column Pair Trends": "Column Pair Trends (Correlations)",
+                    }
+                    
+                    sub_tabs = st.tabs([property_labels.get(c, c) for c in categories])
+                    for tab, category in zip(sub_tabs, categories):
+                        with tab:
+                            subset = details[details["property"] == category].copy()
+                            # Drop technical columns if they exist
+                            cols_to_drop = ["property", "Column 1", "Column 2", "Real Correlation", "Synthetic Correlation"] 
+                            # Keep 'Column' if it exists. Pair trends usually use 'Column 1'/'Column 2' instead of 'Column'.
+                            
+                            if category == "Column Pair Trends":
+                                # For pair trends, keep Col 1 & 2, drop 'Column' if it's None
+                                subset = subset.drop(columns=["Column", "property"], errors="ignore")
+                            else:
+                                subset = subset.drop(columns=["property", "Column 1", "Column 2"], errors="ignore")
+                                
+                            st.dataframe(subset, width="stretch", hide_index=True)
+                else:
+                    st.dataframe(details, width="stretch")
 
         csv_bytes = result.dataframe.to_csv(index=False).encode("utf-8")
         st.download_button(
