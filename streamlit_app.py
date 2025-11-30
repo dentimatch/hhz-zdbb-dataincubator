@@ -33,6 +33,7 @@ from synthesis_runner import (
     load_dataset,
     run_training,
 )
+from data_processor import process_data, ScalingRule
 
 
 from viz_utils import (
@@ -427,10 +428,11 @@ def app() -> None:
             st.session_state[cleaning_strategy_key] = nan_strategy_selection
             st.session_state[scaling_rules_key] = edited_scaling.copy()
             
-            # 2. Extract Selection & Renaming
+            # 2. Extract Selection
             included_df = edited_schema[edited_schema["Include"]]
             candidate_cols = included_df["Column"].tolist()
             
+            # 3. Extract Renaming
             new_renaming_map = {}
             for _, row in included_df.iterrows():
                 orig = row["Column"]
@@ -441,97 +443,34 @@ def app() -> None:
             if not candidate_cols:
                 st.warning("⚠️ At least one column must be included. Configuration not updated.")
             else:
-                # 3. Update Active Selection
-                st.session_state[active_cols_key] = candidate_cols
-                st.session_state[renaming_map_key] = new_renaming_map
-                
-                # Clear old cleaning results to ensure fresh processing
-                st.session_state.pop(cleaned_df_key, None)
-                st.session_state.pop(cleaned_meta_key, None)
-                
-                # 4. Create Draft & Rename
-                temp_draft = df_original[candidate_cols].copy()
-                if new_renaming_map:
-                    temp_draft.rename(columns=new_renaming_map, inplace=True)
-                
-                # 5. Check & Apply Cleaning
-                has_nans = temp_draft.isnull().values.any()
-                final_df = temp_draft
-                msg_parts = [f"✅ Configured: {len(candidate_cols)} columns selected"]
-                
-                if new_renaming_map:
-                    msg_parts.append(f"{len(new_renaming_map)} renamed")
-                
-                if has_nans and nan_strategy_selection != "Keep (let SDV handle it)":
-                    if nan_strategy_selection == "Drop rows with missing values":
-                        before = len(final_df)
-                        final_df = final_df.dropna()
-                        dropped = before - len(final_df)
-                        msg_parts.append(f"{dropped} rows dropped (cleaning)")
-                    elif nan_strategy_selection == "Fill with Mean/Mode":
-                        filled_count = 0
-                        for col in final_df.columns:
-                            if final_df[col].isnull().any():
-                                if final_df[col].dtype.kind in "biufc":
-                                    final_df[col] = final_df[col].fillna(final_df[col].mean())
-                                else:
-                                    mode_val = final_df[col].mode()
-                                    fill_val = mode_val[0] if not mode_val.empty else "Missing"
-                                    final_df[col] = final_df[col].fillna(fill_val)
-                                filled_count += 1
-                        msg_parts.append(f"{filled_count} cols filled (cleaning)")
-                
-                # 6. Apply Scaling (US-2.2)
-                # Filter rules where both Min and Max are provided
+                # 4. Extract Scaling Rules
                 scaling_todo = edited_scaling.dropna(subset=["Target Min", "Target Max"])
-                scaled_count = 0
-                
-                if not scaling_todo.empty:
-                    for _, rule in scaling_todo.iterrows():
-                        orig_col_name = rule["Column"]
-                        # Map back to the *renamed* column name if applicable
-                        target_col_name = new_renaming_map.get(orig_col_name, orig_col_name)
-                        
-                        if target_col_name in final_df.columns:
-                             t_min = rule["Target Min"]
-                             t_max = rule["Target Max"]
-                             
-                             if t_min >= t_max:
-                                 st.warning(f"⚠️ Scaling skipped for '{target_col_name}': Target Min ({t_min}) must be less than Target Max ({t_max}).")
-                                 continue
+                rules = []
+                for _, row in scaling_todo.iterrows():
+                    rules.append(ScalingRule(
+                        column=row["Column"],
+                        target_min=row["Target Min"],
+                        target_max=row["Target Max"]
+                    ))
 
-                             col_data = final_df[target_col_name]
-                             # Skip if non-numeric (sanity check)
-                             if not pd.api.types.is_numeric_dtype(col_data):
-                                 continue
-                                 
-                             c_min = col_data.min()
-                             c_max = col_data.max()
-                             
-                             if c_min == c_max:
-                                 # Constant column, set to average of target range or just min?
-                                 # Standard min-max usually maps to min.
-                                 final_df[target_col_name] = t_min
-                             else:
-                                 # Apply Formula: (X - min) / (max - min) * (t_max - t_min) + t_min
-                                 scale_factor = (t_max - t_min) / (c_max - c_min)
-                                 final_df[target_col_name] = (col_data - c_min) * scale_factor + t_min
-                             
-                             scaled_count += 1
-                    
-                    if scaled_count > 0:
-                        msg_parts.append(f"{scaled_count} cols scaled")
-
-                # Save Final Data state
-                # Always detect metadata from the FINAL transformed dataframe to capture scaling/cleaning effects
-                from sdv.metadata import SingleTableMetadata
-                new_meta = SingleTableMetadata()
-                new_meta.detect_from_dataframe(final_df)
-                st.session_state[cleaned_df_key] = final_df
-                st.session_state[cleaned_meta_key] = new_meta
+                # 5. Process Data
+                # Note: process_data handles renaming, cleaning, scaling and metadata detection
+                result = process_data(
+                    df=df_original,
+                    selected_columns=candidate_cols,
+                    renaming_map=new_renaming_map,
+                    cleaning_strategy=nan_strategy_selection,
+                    scaling_rules=rules
+                )
                 
-                # Construct success message
-                msg = ", ".join(msg_parts) + "."
+                # 6. Update State
+                st.session_state[active_cols_key] = candidate_cols
+                st.session_state[renaming_map_key] = result.renaming_map
+                st.session_state[cleaned_df_key] = result.dataframe
+                st.session_state[cleaned_meta_key] = result.metadata
+                
+                # 7. Success Message
+                msg = ", ".join(result.summary) + "."
                 st.success(msg)
                 st.rerun()
 
