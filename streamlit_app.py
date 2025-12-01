@@ -33,7 +33,7 @@ from synthesis_runner import (
     load_dataset,
     run_training,
 )
-from data_processor import process_data, ScalingRule
+from data_processor import process_data, ScalingRule, inverse_scale_data, ScalingInfo
 
 
 from viz_utils import (
@@ -325,6 +325,7 @@ def app() -> None:
         cleaned_df_key = f"cleaned_df_{selected_name}_{selected_mtime}"
         cleaned_meta_key = f"cleaned_meta_{selected_name}_{selected_mtime}"
         scaling_rules_key = f"scaling_rules_{selected_name}_{selected_mtime}"
+        scaling_info_key = f"scaling_info_{selected_name}_{selected_mtime}"
 
         if schema_data_key not in st.session_state:
             st.session_state[schema_data_key] = pd.DataFrame({
@@ -334,93 +335,133 @@ def app() -> None:
                 "Type": df_original.dtypes.astype(str).values
             })
 
-        # Unified Form for Selection, Renaming, Cleaning, and Scaling
-        with st.form(key=f"config_form_{selected_name}_{selected_mtime}"):
-            st.subheader("Feature Selection & Renaming")
-            edited_schema = st.data_editor(
-                st.session_state[schema_data_key],
+        # Unified Configuration Section (No Form for better reactivity)
+        st.subheader("Feature Selection & Renaming")
+        
+        # 1. Schema Editor
+        current_schema = st.session_state[schema_data_key]
+        edited_schema = st.data_editor(
+            current_schema,
+            column_config={
+                "Include": st.column_config.CheckboxColumn(
+                    "Train?",
+                    help="Uncheck to exclude this column from synthesis",
+                    default=True,
+                ),
+                "Column": st.column_config.TextColumn("Original Name", disabled=True),
+                "Rename To": st.column_config.TextColumn("Rename To (Optional)", help="Edit this to rename the feature for training"),
+                "Type": st.column_config.TextColumn("Detected Type", disabled=True),
+            },
+            disabled=["Column", "Type"],
+            hide_index=True,
+            use_container_width=True,
+            key=schema_widget_key,
+        )
+        
+        st.subheader("Data Cleaning")
+        # 2. Cleaning Strategy
+        cleaning_strategy_key = f"cleaning_strategy_{selected_name}_{selected_mtime}"
+        if cleaning_strategy_key not in st.session_state:
+            st.session_state[cleaning_strategy_key] = "Keep (let SDV handle it)"
+        
+        options = [
+            "Keep (let SDV handle it)",
+            "Drop rows with missing values",
+            "Fill with Mean/Mode",
+        ]
+        
+        # Get current saved strategy to set index
+        saved_strategy = st.session_state[cleaning_strategy_key]
+        try:
+            current_index = options.index(saved_strategy)
+        except ValueError:
+            current_index = 0
+
+        nan_strategy_selection = st.radio(
+            "Handle missing values (if detected):",
+            options=options,
+            index=current_index,
+            horizontal=True,
+            help="These rules are applied only if missing values (NaNs) are found in the selected columns."
+        )
+        
+        st.subheader("Value Scaling (Optional)")
+        # 3. Scaling Rules
+        with st.expander("Configure Numeric Scaling"):
+            st.caption("Linearly scale numeric columns to a new target range (e.g., 0-100 → 0-1).")
+            
+            # Prepare initial scaling DataFrame
+            # We need to know which columns are numeric from the *original* set that are currently included
+            # We use the schema state to filter numeric columns.
+            numeric_cols = current_schema[current_schema["Type"].str.contains("int|float")]["Column"].tolist()
+            
+            if scaling_rules_key not in st.session_state:
+                # Initialize empty rules for all numeric columns
+                st.session_state[scaling_rules_key] = pd.DataFrame({
+                    "Column": numeric_cols,
+                    "Target Min": [None] * len(numeric_cols),
+                    "Target Max": [None] * len(numeric_cols)
+                })
+            
+            # Ensure the scaling editor only shows columns that exist (in case file changed/reloaded)
+            existing_rules = st.session_state[scaling_rules_key]
+            # Merge to keep existing rules but add/remove columns
+            scaling_df_template = pd.DataFrame({"Column": numeric_cols})
+            merged_scaling = pd.merge(scaling_df_template, existing_rules, on="Column", how="left")
+            
+            # Update the source of truth for the editor to match current columns
+            # Note: We don't save this to session_state[scaling_rules_key] yet, 
+            # we only use it as the baseline for the editor. 
+            # Actually, we should probably update it so the editor starts clean if columns changed.
+            # But if we update it, we lose the "unsaved changes" diff capability against the saved state?
+            # No, saved state IS scaling_rules_key.
+            # If we update scaling_rules_key here, we are "auto-saving" the column structure changes.
+            # That's fine.
+            if not merged_scaling.equals(existing_rules):
+                 st.session_state[scaling_rules_key] = merged_scaling
+
+            edited_scaling = st.data_editor(
+                st.session_state[scaling_rules_key],
                 column_config={
-                    "Include": st.column_config.CheckboxColumn(
-                        "Train?",
-                        help="Uncheck to exclude this column from synthesis",
-                        default=True,
-                    ),
-                    "Column": st.column_config.TextColumn("Original Name", disabled=True),
-                    "Rename To": st.column_config.TextColumn("Rename To (Optional)", help="Edit this to rename the feature for training"),
-                    "Type": st.column_config.TextColumn("Detected Type", disabled=True),
+                    "Column": st.column_config.TextColumn("Numeric Column", disabled=True),
+                    "Target Min": st.column_config.NumberColumn("Target Min", help="New minimum value", required=False),
+                    "Target Max": st.column_config.NumberColumn("Target Max", help="New maximum value", required=False),
                 },
-                disabled=["Column", "Type"],
+                disabled=["Column"],
                 hide_index=True,
                 use_container_width=True,
-                key=schema_widget_key,
+                key=f"scaling_editor_{selected_name}_{selected_mtime}"
             )
-            
-            st.subheader("Data Cleaning")
-            # Cleaning options (always visible but conditional on execution)
-            # Restore previous strategy
-            cleaning_strategy_key = f"cleaning_strategy_{selected_name}_{selected_mtime}"
-            if cleaning_strategy_key not in st.session_state:
-                st.session_state[cleaning_strategy_key] = "Keep (let SDV handle it)"
-            
-            options = [
-                "Keep (let SDV handle it)",
-                "Drop rows with missing values",
-                "Fill with Mean/Mode",
-            ]
-            try:
-                current_index = options.index(st.session_state[cleaning_strategy_key])
-            except ValueError:
-                current_index = 0
 
-            nan_strategy_selection = st.radio(
-                "Handle missing values (if detected):",
-                options=options,
-                index=current_index,
-                horizontal=True,
-                help="These rules are applied only if missing values (NaNs) are found in the selected columns."
-            )
+        # --- Change Detection & Application ---
+        
+        # Check if anything changed compared to the saved state
+        changes_detected = False
+        
+        # 1. Schema changes
+        if not edited_schema.equals(st.session_state[schema_data_key]):
+            changes_detected = True
             
-            st.subheader("Value Scaling (Optional)")
-            with st.expander("Configure Numeric Scaling"):
-                st.caption("Linearly scale numeric columns to a new target range (e.g., 0-100 → 0-1).")
-                
-                # Prepare initial scaling DataFrame
-                # We need to know which columns are numeric from the *original* set that are currently included
-                # Since we are inside the form, we can't get the exact live inclusion state easily without rerun,
-                # so we use the schema state.
-                current_schema = st.session_state[schema_data_key]
-                numeric_cols = current_schema[current_schema["Type"].str.contains("int|float")]["Column"].tolist()
-                
-                if scaling_rules_key not in st.session_state:
-                    # Initialize empty rules for all numeric columns
-                    st.session_state[scaling_rules_key] = pd.DataFrame({
-                        "Column": numeric_cols,
-                        "Target Min": [None] * len(numeric_cols),
-                        "Target Max": [None] * len(numeric_cols)
-                    })
-                
-                # Ensure the scaling editor only shows columns that exist (in case file changed/reloaded)
-                # We sync the rows to match available numeric columns
-                existing_rules = st.session_state[scaling_rules_key]
-                # Merge to keep existing rules but add/remove columns
-                scaling_df_template = pd.DataFrame({"Column": numeric_cols})
-                merged_scaling = pd.merge(scaling_df_template, existing_rules, on="Column", how="left")
-                st.session_state[scaling_rules_key] = merged_scaling
+        # 2. Strategy changes
+        if nan_strategy_selection != st.session_state[cleaning_strategy_key]:
+            changes_detected = True
+            
+        # 3. Scaling changes
+        # Note: st.session_state[scaling_rules_key] was updated with column structure above,
+        # so we are comparing values (Min/Max) entered by user vs saved.
+        if not edited_scaling.equals(st.session_state[scaling_rules_key]):
+            changes_detected = True
 
-                edited_scaling = st.data_editor(
-                    st.session_state[scaling_rules_key],
-                    column_config={
-                        "Column": st.column_config.TextColumn("Numeric Column", disabled=True),
-                        "Target Min": st.column_config.NumberColumn("Target Min", help="New minimum value", required=False),
-                        "Target Max": st.column_config.NumberColumn("Target Max", help="New maximum value", required=False),
-                    },
-                    disabled=["Column"],
-                    hide_index=True,
-                    use_container_width=True,
-                    key=f"scaling_editor_{selected_name}_{selected_mtime}"
-                )
-
-            confirm_config = st.form_submit_button("Confirm Configuration", type="primary")
+        apply_col, msg_col = st.columns([1, 3])
+        
+        with apply_col:
+            confirm_config = st.button("Apply Configuration", type="primary", use_container_width=True)
+            
+        with msg_col:
+            if changes_detected:
+                st.warning("⚠️ Unsaved changes. Click 'Apply Configuration' to update the training data.")
+            elif cleaned_df_key in st.session_state:
+                st.success("✅ Configuration applied.")
 
         if confirm_config:
             # 1. Save Schema & Scaling State
@@ -468,6 +509,9 @@ def app() -> None:
                 st.session_state[renaming_map_key] = result.renaming_map
                 st.session_state[cleaned_df_key] = result.dataframe
                 st.session_state[cleaned_meta_key] = result.metadata
+                st.session_state[scaling_info_key] = result.scaling_info
+                
+                # 7. Success Message
                 
                 # 7. Success Message
                 msg = ", ".join(result.summary) + "."
@@ -594,10 +638,18 @@ def app() -> None:
                 df_synth = runner_result.df_synth
                 actual_duration_label = format_elapsed_time(runner_result.actual_seconds)
 
+                # --- Post-Processing: Inverse Scaling ---
+                # Restore original scale and data types if scaling was applied
+                scaling_info_key = f"scaling_info_{selected_name}_{selected_mtime}"
+                scaling_info = st.session_state.get(scaling_info_key, [])
+                if scaling_info:
+                    df_synth = inverse_scale_data(df_synth, scaling_info)
+                    st.info("✅ Restored original value ranges and data types (inverse scaling applied).")
+
                 utility_score, report_details, report_warnings = run_quality_report(
-                    df_train,
+                    df_original,  # Compare against ORIGINAL (unscaled) data now
                     df_synth,
-                    metadata_train,
+                    metadata_original, # Use original metadata
                 )
                 suffix_normalized = ensure_suffix(suffix)
                 output_path = selected_path.with_name(f"{selected_path.stem}{suffix_normalized}.csv")
