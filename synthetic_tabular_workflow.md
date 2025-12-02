@@ -74,7 +74,7 @@ Key customization points:
   ```powershell
   streamlit run streamlit_app.py
   ```
-- Features: pick a CSV from `data/`, inspect preview/statistics, set additional rows, generate synthetic data, review the evaluation, download the result.
+- Features: pick a CSV from `data/`, inspect preview/statistics, **prepare & transform** (select columns, clean missing values, scale numeric data), set additional rows, generate synthetic data, review the evaluation, download the result.
 - Output files are saved alongside the original with a suffix (default `_synthetic`); for example `patients_synthetic.csv`.
 - Evaluation uses the SDMetrics *QualityReport* (via `evaluation_utils.run_quality_report`); scores, detailed metrics, and numeric comparison tables appear under "Results & Validation".
 - During synthesis a progress bar shows a heuristic estimate of the remaining time; after completion the summary notes estimated vs. actual duration. The "Info" tab sources its content from `docs/explainers.md` and explains models, seeds, and metrics.

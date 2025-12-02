@@ -94,25 +94,33 @@ The web application provides a guided workflow for non-technical users.
 4. The browser opens automatically. If not, copy the local link displayed (for example `http://localhost:8501`) into the address bar.
 
 ### Feature overview
-1. **Select file** – dropdown lists every CSV file in `data/`.
-2. **Descriptive statistics** – preview of the first rows, numeric KPIs, top categories.
-3. **Prepare & Transform** – select specific columns, rename features, and handle missing values (drop rows or fill) in a single configuration step.
-4. **Configure synthesis** – choose the SDV model, seed (for reproducible runs), number of additional rows, and output suffix.
-5. **Generate and save** – creates the synthetic dataset and writes it as a CSV next to the original using the suffix (default `_synthetic`). A download button is provided.
-6. **Evaluation** – SDMetrics *QualityReport* supplies utility scores (0–1) plus detailed metrics; numeric KPIs are compared side by side.
-7. **Info** – tab with explanatory content sourced from `docs/explainers.md` (models, seeds, metrics, workflow tips).
+1. **Explore the dataset** – preview of the first rows, numeric statistics, and categorical value counts.
+2. **Prepare & Transform** – comprehensive data setup:
+   - **Feature Selection**: choose which columns to include/exclude.
+   - **Renaming**: rename columns (e.g., "Alter" -> "Age") to match target schemas.
+   - **Data Cleaning**: handle missing values (Keep, Drop rows, or Fill with Mean/Mode).
+   - **Value Scaling**: optionally scale numeric columns to a specific range (e.g., 0-1) to fit domain constraints; the app automatically inverses this scaling on the synthetic output.
+3. **Generate synthetic data** – choose the SDV model (CTGAN, GaussianCopula, TVAE), set a random seed, and define the number of additional rows.
+4. **Results & validation** – view the utility score, detailed metrics, and download the generated dataset.
+5. **Info** – documentation on models, seeds, and metrics.
 
 ### Typical flow inside the app
-1. Pick a CSV in the sidebar dropdown.
-2. Review the statistics (tabs "Preview", "Numeric Statistics", "Categorical Values").
-3. In the "Prepare & Transform" section:
-   - Uncheck columns to exclude them.
-   - Rename columns (e.g., "Alter" -> "Age") if needed.
-   - Select a cleaning strategy for missing values (Keep, Drop rows, or Fill with Mean/Mode).
-   - Click "Confirm Configuration".
-4. Fill in the generation form (model, seed, extra rows, suffix) and click "Generate".
-5. Optional: use the "Training settings" expander to adjust epochs/batch size (for CTGAN/TVAE).
-6. Wait for the synthesis to complete. The progress bar continuously estimates the remaining time. Once finished, metrics, comparison tables, and the download link appear.
+1. **Select a CSV** from the sidebar.
+2. **Explore** the data in the "Explore the dataset" section.
+3. **Configure** the data in "Prepare & Transform":
+   - Use the schema editor to include/exclude or rename columns.
+   - Select a strategy for missing values.
+   - (Optional) Define scaling rules for numeric columns.
+   - Click **"Apply Configuration"** to confirm changes.
+4. **Generate**:
+   - Select a synthesizer model and random seed.
+   - Set the number of additional rows and output filename suffix.
+   - (Optional) Adjust training settings (epochs, batch size).
+   - Click **"Generate"**.
+5. **Evaluate**:
+   - Wait for training to complete.
+   - Review the **Utility Score** and **Distribution/Correlation** plots.
+   - Download the synthetic data (automatically saved to `data/`).
 
 ## Interpreting the results
 - **Utility score** (0–1): indicates how similar the original and synthetic data behave. Values above 0.7 are often considered good, but thresholds depend on the use case. The score comes from the SDMetrics *QualityReport*.

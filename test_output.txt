@@ -1,0 +1,166 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.13.5, pytest-8.4.2, pluggy-1.6.0 -- C:\Python313\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Cursor_Git\hhz-zdbb-dataincubator
+plugins: Faker-37.12.0
+collecting ... collected 9 items
+
+tests/test_data_processor.py::test_process_data_selection_and_renaming PASSED [ 11%]
+tests/test_data_processor.py::test_process_data_cleaning_drop PASSED     [ 22%]
+tests/test_data_processor.py::test_process_data_cleaning_fill PASSED     [ 33%]
+tests/test_data_processor.py::test_process_data_scaling PASSED           [ 44%]
+tests/test_data_processor.py::test_process_data_scaling_with_renaming PASSED [ 55%]
+tests/test_data_processor.py::test_process_data_scaling_constant_column PASSED [ 66%]
+tests/test_data_processor.py::test_process_data_scaling_invalid_range PASSED [ 77%]
+tests/test_synthesis_runner.py::test_duration_estimations PASSED         [ 88%]
+tests/test_synthesis_runner.py::test_run_training_gaussian_copula FAILED [100%]
+
+================================== FAILURES ===================================
+______________________ test_run_training_gaussian_copula ______________________
+
+name = 'gaussiancopula'
+metadata = {
+    "METADATA_SPEC_VERSION": "SINGLE_TABLE_V1",
+    "columns": {
+        "age": {
+            "sdtype": "numerical"
+...            "sdtype": "numerical"
+        },
+        "segment": {
+            "sdtype": "categorical"
+        }
+    }
+}
+registry = {'gaussiancopula': <class 'sdv.single_table.copulas.GaussianCopulaSynthesizer'>}
+random_state = 42, init_kwargs = None
+
+    def build_synthesizer(
+        name: str,
+        metadata: "SingleTableMetadata",
+        registry: Mapping[str, str],
+        random_state: Optional[int],
+        init_kwargs: Optional[dict] = None,
+    ) -> Tuple[object, bool]:
+        # Lazy import to avoid loading heavy TensorFlow/PyTorch dependencies at startup
+        from sdv.single_table import (
+            CTGANSynthesizer,
+            GaussianCopulaSynthesizer,
+            TVAESynthesizer,
+        )
+    
+        # Map string class names to actual classes
+        class_map = {
+            "CTGANSynthesizer": CTGANSynthesizer,
+            "GaussianCopulaSynthesizer": GaussianCopulaSynthesizer,
+            "TVAESynthesizer": TVAESynthesizer,
+        }
+    
+        normalized = {key.lower(): value for key, value in registry.items()}
+        try:
+            class_name = normalized[name.lower()]
+        except KeyError as exc:  # pragma: no cover - defensive guard
+            available = ", ".join(sorted(normalized))
+            raise ValueError(f"Unknown synthesizer '{name}'. Options: {available}") from exc
+    
+        try:
+>           SynthClass = class_map[class_name]
+                         ^^^^^^^^^^^^^^^^^^^^^
+E           KeyError: <class 'sdv.single_table.copulas.GaussianCopulaSynthesizer'>
+
+synthesis_runner.py:102: KeyError
+
+The above exception was the direct cause of the following exception:
+
+    def test_run_training_gaussian_copula():
+        data = pd.DataFrame(
+            {
+                "age": [25, 30, 45, 35, 40],
+                "income": [50000, 52000, 61000, 58000, 59000],
+                "segment": ["A", "B", "A", "C", "B"],
+            }
+        )
+        metadata = load_metadata(None, data)
+    
+        events = []
+    
+        def progress_callback(fraction: float, status: str) -> None:
+            events.append((fraction, status))
+    
+>       result = run_training(
+            df_real=data,
+            metadata=metadata,
+            model_name="gaussiancopula",
+            random_seed=42,
+            registry={"gaussiancopula": GaussianCopulaSynthesizer},
+            total_rows=len(data),
+            estimated_minutes=estimate_duration_minutes(len(data), len(data.columns), "gaussiancopula", 0),
+            progress_callback=progress_callback,
+            poll_interval=0.1,
+        )
+
+tests\test_synthesis_runner.py:42: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+synthesis_runner.py:205: in run_training
+    synthesizer, used_global_seed = build_synthesizer(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+name = 'gaussiancopula'
+metadata = {
+    "METADATA_SPEC_VERSION": "SINGLE_TABLE_V1",
+    "columns": {
+        "age": {
+            "sdtype": "numerical"
+...            "sdtype": "numerical"
+        },
+        "segment": {
+            "sdtype": "categorical"
+        }
+    }
+}
+registry = {'gaussiancopula': <class 'sdv.single_table.copulas.GaussianCopulaSynthesizer'>}
+random_state = 42, init_kwargs = None
+
+    def build_synthesizer(
+        name: str,
+        metadata: "SingleTableMetadata",
+        registry: Mapping[str, str],
+        random_state: Optional[int],
+        init_kwargs: Optional[dict] = None,
+    ) -> Tuple[object, bool]:
+        # Lazy import to avoid loading heavy TensorFlow/PyTorch dependencies at startup
+        from sdv.single_table import (
+            CTGANSynthesizer,
+            GaussianCopulaSynthesizer,
+            TVAESynthesizer,
+        )
+    
+        # Map string class names to actual classes
+        class_map = {
+            "CTGANSynthesizer": CTGANSynthesizer,
+            "GaussianCopulaSynthesizer": GaussianCopulaSynthesizer,
+            "TVAESynthesizer": TVAESynthesizer,
+        }
+    
+        normalized = {key.lower(): value for key, value in registry.items()}
+        try:
+            class_name = normalized[name.lower()]
+        except KeyError as exc:  # pragma: no cover - defensive guard
+            available = ", ".join(sorted(normalized))
+            raise ValueError(f"Unknown synthesizer '{name}'. Options: {available}") from exc
+    
+        try:
+            SynthClass = class_map[class_name]
+        except KeyError as exc:  # pragma: no cover - defensive guard
+>           raise ValueError(f"Unknown synthesizer class '{class_name}'. Options: {', '.join(class_map.keys())}") from exc
+E           ValueError: Unknown synthesizer class '<class 'sdv.single_table.copulas.GaussianCopulaSynthesizer'>'. Options: CTGANSynthesizer, GaussianCopulaSynthesizer, TVAESynthesizer
+
+synthesis_runner.py:104: ValueError
+============================== warnings summary ===============================
+..\..\Users\konst\AppData\Roaming\Python\Python313\site-packages\rdt\transformers\utils.py:18
+  C:\Users\konst\AppData\Roaming\Python\Python313\site-packages\rdt\transformers\utils.py:18: DeprecationWarning: module 'sre_parse' is deprecated
+    import sre_parse  # isort:skip
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_synthesis_runner.py::test_run_training_gaussian_copula - Va...
+=================== 1 failed, 8 passed, 1 warning in 2.76s ====================

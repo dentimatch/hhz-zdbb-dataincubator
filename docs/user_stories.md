@@ -55,6 +55,7 @@ Focus on building trust in the synthetic data.
 
 #### US-2.2 Target Range Adaptation (Scaling)
 - **Description**: As a user, I want to transform numeric columns (e.g., scale an "Age" column from 0-100 to 25-45) so that generic proxy data fits my specific business domain constraints before synthesis.
+- **Status**: ✅ Completed
 - **Acceptance Criteria**:
   - UI allows selecting a numeric column.
   - User can define a target Min/Max range or Shift/Scale factor.
@@ -110,6 +111,7 @@ Focus on building trust in the synthetic data.
 
 #### US-5.1 Visual Distribution Comparison
 - **Description**: As a data analyst, I want to see histograms comparing real vs. synthetic distributions so that I can visually verify the quality beyond simple mean/std stats.
+- **Status**: ✅ Completed
 - **Acceptance Criteria**:
   - UI shows side-by-side or overlaid histograms for numeric columns.
   - UI shows bar charts for categorical columns.
@@ -118,6 +120,7 @@ Focus on building trust in the synthetic data.
 
 #### US-5.2 Correlation Matrix
 - **Description**: As a data analyst, I want to see a correlation heatmap so that I can ensure column relationships are preserved in the synthetic data.
+- **Status**: ✅ Completed
 - **Acceptance Criteria**:
   - Heatmap visualization for real data.
   - Heatmap visualization for synthetic data.

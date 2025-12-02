@@ -44,7 +44,7 @@ def test_run_training_gaussian_copula():
         metadata=metadata,
         model_name="gaussiancopula",
         random_seed=42,
-        registry={"gaussiancopula": GaussianCopulaSynthesizer},
+        registry={"gaussiancopula": "GaussianCopulaSynthesizer"},
         total_rows=len(data),
         estimated_minutes=estimate_duration_minutes(len(data), len(data.columns), "gaussiancopula", 0),
         progress_callback=progress_callback,
